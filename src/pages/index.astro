@@ -1,19 +1,936 @@
 ---
-import Layout from '../layouts/Layout.astro';
-import Markdown from '../components/Markdown.astro';
-
-const explainer = `
-An Astro website can go way beyond static pages - on the right platform.
-
-Netlify supports not only [Streaming SSR](https://docs.astro.build/en/guides/server-side-rendering/#html-streaming) and fast [Edge Middleware](https://docs.astro.build/en/guides/middleware/), but also [on-demand revalidation](https://www.netlify.com/blog/cache-tags-and-purge-api-on-netlify/) and [stale-while-revalidate](https://www.netlify.com/blog/swr-and-fine-grained-cache-control/). 
-Any page or data can be rebuilt only when needed, without site visitors ever getting a performance hit.
-`;
+// Batti il Banco — prototipo bet tracker local-first (modulo Thorp)
+// App self-contained: vanilla JS + IndexedDB, nessuna dipendenza.
 ---
 
-<Layout title="Welcome to Astro.">
-    <h1 class="mb-10">Netlify Platform Starter for Astro</h1>
-    <Markdown content={explainer} class="mb-10 text-lg" />
-    <p>
-        <a href="https://docs.netlify.com/frameworks/astro/" class="btn btn-lg sm:min-w-64">Read the Docs</a>
-    </p>
-</Layout>
+<!doctype html>
+<html lang="it">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Batti il Banco — bet tracker</title>
+        <meta name="description" content="Registro scommesse personale con gestione bankroll, Kelly frazionato e closing line value. Local-first, i dati restano sul dispositivo." />
+        <meta name="theme-color" content="#0C1215" />
+        <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+        <link rel="manifest" href="/manifest.webmanifest" />
+    </head>
+    <body>
+<style is:inline>
+  :root {
+    --bg: #0C1215;
+    --panel: #131B1F;
+    --panel-2: #182227;
+    --line: #223038;
+    --line-soft: #1A262C;
+    --text: #E6ECE9;
+    --muted: #90A39F;
+    --gold: #D9A441;
+    --gold-soft: rgba(217, 164, 65, 0.14);
+    --win: #46C98C;
+    --win-soft: rgba(70, 201, 140, 0.12);
+    --loss: #E06A55;
+    --loss-soft: rgba(224, 106, 85, 0.12);
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px 48px; }
+
+  /* ── Header ─────────────────────────── */
+  .top {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 16px; padding: 22px 0 14px;
+  }
+  .brand h1 {
+    font-family: var(--serif); font-weight: 600; font-size: 1.7rem;
+    margin: 0; color: var(--gold); letter-spacing: 0.01em; text-wrap: balance;
+  }
+  .brand p { margin: 2px 0 0; color: var(--muted); font-size: 0.8rem; }
+  .cap { text-align: right; }
+  .cap-label {
+    display: block; font-size: 0.65rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .cap-value {
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+    font-size: 1.5rem; font-weight: 600;
+  }
+
+  /* ── Tabs ───────────────────────────── */
+  .tabs {
+    display: flex; gap: 4px; border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; background: var(--bg); z-index: 5;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs button {
+    appearance: none; background: none; border: none; border-bottom: 2px solid transparent;
+    color: var(--muted); font: inherit; font-size: 0.9rem; padding: 10px 14px;
+    cursor: pointer; white-space: nowrap;
+  }
+  .tabs button:hover { color: var(--text); }
+  .tabs button:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--gold); outline-offset: 1px;
+  }
+  .tabs button[aria-selected="true"] {
+    color: var(--gold); border-bottom-color: var(--gold); font-weight: 600;
+  }
+
+  /* ── Cards & layout ─────────────────── */
+  .view { display: flex; flex-direction: column; gap: 14px; padding-top: 16px; }
+  .view[hidden] { display: none; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line-soft);
+    border-radius: 6px; padding: 16px;
+  }
+  .card h2 {
+    font-family: var(--serif); font-size: 1.05rem; font-weight: 600;
+    margin: 0 0 12px; color: var(--text);
+  }
+  .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .cols { grid-template-columns: 1fr; } }
+  .hint { color: var(--muted); font-size: 0.8rem; }
+  .empty { color: var(--muted); font-size: 0.86rem; padding: 10px 0; }
+
+  /* ── Stat tiles ─────────────────────── */
+  .tiles {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px;
+  }
+  .tile {
+    background: var(--panel); border: 1px solid var(--line-soft); border-radius: 6px;
+    padding: 12px 14px;
+  }
+  .tile .t-label {
+    font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted); display: block; margin-bottom: 4px;
+  }
+  .tile .t-value {
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+    font-size: 1.2rem; font-weight: 600;
+  }
+  .tile .t-sub { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+  .pos { color: var(--win); }
+  .neg { color: var(--loss); }
+
+  /* ── Tables ─────────────────────────── */
+  .tbl-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
+  th {
+    text-align: left; font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; padding: 6px 10px 6px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  td {
+    padding: 7px 10px 7px 0; border-bottom: 1px solid var(--line-soft);
+    vertical-align: middle;
+  }
+  td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  th.num { font-family: var(--sans); }
+  tr:last-child td { border-bottom: none; }
+
+  /* ── Forms ──────────────────────────── */
+  .frm { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; align-items: end; }
+  .frm .full { grid-column: 1 / -1; }
+  label.fld { display: flex; flex-direction: column; gap: 3px; font-size: 0.68rem;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  input, select {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px;
+    color: var(--text); font: inherit; font-size: 0.9rem; padding: 8px 10px; width: 100%;
+  }
+  input[type="number"] { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .btn {
+    appearance: none; border: 1px solid var(--line); border-radius: 4px;
+    background: var(--panel-2); color: var(--text); font: inherit; font-size: 0.86rem;
+    padding: 8px 14px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--gold); }
+  .btn-gold {
+    background: var(--gold); border-color: var(--gold); color: #171208; font-weight: 600;
+  }
+  .btn-gold:hover { filter: brightness(1.08); }
+  .btn-sm { padding: 4px 9px; font-size: 0.78rem; border-radius: 4px; }
+  .btn-win { color: var(--win); border-color: var(--win); background: none; }
+  .btn-win:hover { background: var(--win-soft); }
+  .btn-loss { color: var(--loss); border-color: var(--loss); background: none; }
+  .btn-loss:hover { background: var(--loss-soft); }
+  .btn-ghost { color: var(--muted); background: none; }
+  .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+
+  /* ── Bet list ───────────────────────── */
+  .bet {
+    display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
+    padding: 10px 0; border-bottom: 1px solid var(--line-soft);
+  }
+  .bet:last-child { border-bottom: none; }
+  .bet .b-main { flex: 1 1 220px; min-width: 0; }
+  .bet .b-desc { font-weight: 500; }
+  .bet .b-meta { font-size: 0.75rem; color: var(--muted); }
+  .bet .b-nums {
+    font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 0.85rem;
+    display: flex; gap: 14px; align-items: center;
+  }
+  .bet .b-act { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .chip {
+    display: inline-block; padding: 1px 8px; border-radius: 999px;
+    font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600;
+  }
+  .chip-pending { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
+  .chip-won  { background: var(--win-soft);  color: var(--win); }
+  .chip-lost { background: var(--loss-soft); color: var(--loss); }
+  .chip-void { background: var(--panel-2); color: var(--muted); }
+  .chip-cat  { background: var(--gold-soft); color: var(--gold); text-transform: none; letter-spacing: 0; }
+  .co-input { width: 74px; padding: 4px 6px; font-size: 0.8rem; }
+
+  /* ── Books ──────────────────────────── */
+  .books { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .book-balance {
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+    font-size: 1.4rem; font-weight: 600; margin: 2px 0 8px;
+  }
+  .book-row { display: flex; gap: 6px; margin-top: 10px; }
+  .book-row input { flex: 1; }
+  .txn { display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--muted);
+    padding: 3px 0; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* ── Thorp ──────────────────────────── */
+  .prin {
+    font-family: var(--serif); font-style: italic; color: var(--muted);
+    border-left: 2px solid var(--gold); padding-left: 12px; margin: 0 0 14px; max-width: 62ch;
+  }
+  .kelly-out { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; }
+  .kelly-stake {
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+    font-size: 1.6rem; font-weight: 700;
+  }
+  .kelly-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 10px; }
+  .kelly-grid .k-label { font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); display: block; }
+  .kelly-grid .k-val { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 0.95rem; }
+  .note { font-size: 0.8rem; color: var(--muted); max-width: 62ch; }
+  .warn { color: var(--gold); font-size: 0.8rem; }
+
+  /* ── Chart ──────────────────────────── */
+  .chart svg { display: block; width: 100%; height: auto; }
+
+  /* ── Footer ─────────────────────────── */
+  .foot {
+    margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;
+  }
+  .foot .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .foot .note { font-size: 0.72rem; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .tabs button, .btn { transition: color 120ms, border-color 120ms, background 120ms; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Batti il Banco</h1>
+      <p>registro scommesse &amp; modulo Thorp · prototipo personale</p>
+    </div>
+    <div class="cap">
+      <span class="cap-label">Capitale totale</span>
+      <span class="cap-value" id="capTotal">—</span>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Sezioni">
+    <button role="tab" aria-selected="true" data-view="dash">Dashboard</button>
+    <button role="tab" aria-selected="false" data-view="bets">Giocate</button>
+    <button role="tab" aria-selected="false" data-view="books">Case</button>
+    <button role="tab" aria-selected="false" data-view="thorp">Thorp</button>
+  </nav>
+
+  <!-- ── Dashboard ── -->
+  <section class="view" id="view-dash">
+    <div class="tiles" id="tiles"></div>
+    <div class="card">
+      <div class="card-head">
+        <h2>Profitto cumulato</h2>
+        <span class="hint" id="chartHint"></span>
+      </div>
+      <div class="chart" id="chart"></div>
+    </div>
+    <div class="cols">
+      <div class="card"><h2>Per casa</h2><div class="tbl-wrap" id="byBook"></div></div>
+      <div class="card"><h2>Per categoria</h2><div class="tbl-wrap" id="byCat"></div></div>
+    </div>
+  </section>
+
+  <!-- ── Giocate ── -->
+  <section class="view" id="view-bets" hidden>
+    <div class="card">
+      <h2>Nuova giocata</h2>
+      <form id="betForm" class="frm">
+        <label class="fld">Data<input type="date" id="betDate" required></label>
+        <label class="fld">Casa<select id="betBook" required></select></label>
+        <label class="fld">Tipo<select id="betType">
+          <option value="singola">Singola</option>
+          <option value="multipla">Multipla</option>
+        </select></label>
+        <label class="fld">Categoria<input id="betCat" list="catList" placeholder="es. Serie A over"></label>
+        <datalist id="catList"></datalist>
+        <label class="fld full">Descrizione<input id="betDesc" placeholder="es. Milan–Inter, over 2.5" required></label>
+        <label class="fld">Quota<input type="number" id="betOdds" step="0.01" min="1.01" placeholder="1.95" required></label>
+        <label class="fld">Stake €<input type="number" id="betStake" step="0.01" min="0.01" placeholder="10" required></label>
+        <label class="fld">Closing odds<input type="number" id="betClosing" step="0.01" min="1.01" placeholder="opzionale"></label>
+        <button class="btn btn-gold" type="submit">Aggiungi</button>
+      </form>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <h2>Registro</h2>
+        <select id="betFilter" style="width:auto">
+          <option value="all">Tutte</option>
+          <option value="pending">In corso</option>
+          <option value="settled">Chiuse</option>
+        </select>
+      </div>
+      <div id="betList"></div>
+    </div>
+  </section>
+
+  <!-- ── Case ── -->
+  <section class="view" id="view-books" hidden>
+    <div class="card">
+      <h2>Nuova casa</h2>
+      <form id="bookForm" class="frm">
+        <label class="fld" style="grid-column: span 2">Nome<input id="bookName" placeholder="es. Bet365" required></label>
+        <button class="btn btn-gold" type="submit">Aggiungi casa</button>
+      </form>
+    </div>
+    <div class="books" id="bookList"></div>
+  </section>
+
+  <!-- ── Thorp ── -->
+  <section class="view" id="view-thorp" hidden>
+    <div class="card">
+      <h2>Calcolatore Kelly</h2>
+      <p class="prin">La puntata si dimensiona in proporzione al vantaggio che hai, non in reazione ai risultati precedenti. E quando il vantaggio non c&rsquo;è, la puntata giusta è zero. — da <em>Beat the Dealer</em>, E.&nbsp;O.&nbsp;Thorp</p>
+      <div class="frm">
+        <label class="fld">Probabilità stimata %<input type="number" id="kProb" step="0.1" min="0.1" max="99.9" placeholder="55"></label>
+        <label class="fld">Quota offerta<input type="number" id="kOdds" step="0.01" min="1.01" placeholder="1.95"></label>
+        <label class="fld">Bankroll €<input type="number" id="kBank" step="0.01" min="0"></label>
+        <label class="fld">Frazione Kelly<select id="kFrac">
+          <option value="0.25" selected>¼ Kelly (prudente)</option>
+          <option value="0.5">½ Kelly</option>
+          <option value="1">Kelly pieno</option>
+        </select></label>
+      </div>
+      <div class="kelly-out" id="kellyOut">
+        <p class="note">Inserisci probabilità e quota: il calcolatore mostra se c&rsquo;è value e quanto puntare.</p>
+      </div>
+    </div>
+    <div class="cols">
+      <div class="card">
+        <h2>Closing Line Value</h2>
+        <div id="clvBox"></div>
+      </div>
+      <div class="card">
+        <h2>Edge per categoria</h2>
+        <div class="tbl-wrap" id="edgeBox"></div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <div class="actions">
+      <button class="btn btn-sm" id="expJson">Esporta JSON</button>
+      <button class="btn btn-sm" id="expCsv">Esporta CSV</button>
+      <button class="btn btn-sm btn-ghost" id="impBtn">Importa JSON</button>
+      <input type="file" id="impFile" accept="application/json" hidden>
+    </div>
+    <span class="note">Dati solo su questo dispositivo (IndexedDB) · nessun server</span>
+  </footer>
+</div>
+
+<script is:inline>
+(function () {
+  'use strict';
+
+  /* ── DB ─────────────────────────────── */
+  var db = null;
+  function openDB() {
+    return new Promise(function (res, rej) {
+      var r = indexedDB.open('battibanco', 1);
+      r.onupgradeneeded = function (e) {
+        var d = e.target.result;
+        if (!d.objectStoreNames.contains('books')) d.createObjectStore('books', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('bets')) d.createObjectStore('bets', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('txns')) d.createObjectStore('txns', { keyPath: 'id' });
+      };
+      r.onsuccess = function () { res(r.result); };
+      r.onerror = function () { rej(r.error); };
+    });
+  }
+  function store(name, mode) { return db.transaction(name, mode).objectStore(name); }
+  function getAll(name) {
+    return new Promise(function (res, rej) {
+      var r = store(name, 'readonly').getAll();
+      r.onsuccess = function () { res(r.result || []); };
+      r.onerror = function () { rej(r.error); };
+    });
+  }
+  function put(name, val) {
+    return new Promise(function (res, rej) {
+      var t = db.transaction(name, 'readwrite');
+      t.objectStore(name).put(val);
+      t.oncomplete = res; t.onerror = function () { rej(t.error); };
+    });
+  }
+  function del(name, id) {
+    return new Promise(function (res, rej) {
+      var t = db.transaction(name, 'readwrite');
+      t.objectStore(name).delete(id);
+      t.oncomplete = res; t.onerror = function () { rej(t.error); };
+    });
+  }
+  function clearStore(name) {
+    return new Promise(function (res, rej) {
+      var t = db.transaction(name, 'readwrite');
+      t.objectStore(name).clear();
+      t.oncomplete = res; t.onerror = function () { rej(t.error); };
+    });
+  }
+
+  /* ── State ──────────────────────────── */
+  var S = { books: [], bets: [], txns: [] };
+  function reload() {
+    return Promise.all([getAll('books'), getAll('bets'), getAll('txns')]).then(function (r) {
+      S.books = r[0]; S.bets = r[1]; S.txns = r[2];
+      S.books.sort(function (a, b) { return a.name.localeCompare(b.name); });
+      renderAll();
+    });
+  }
+
+  /* ── Helpers ────────────────────────── */
+  function uid() {
+    return (crypto.randomUUID) ? crypto.randomUUID()
+      : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+  }
+  var eur = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
+  function money(v) { return eur.format(v || 0); }
+  function pct(v, dec) { return (v * 100).toFixed(dec == null ? 1 : dec).replace('.', ',') + '%'; }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function signCls(v) { return v > 0.0001 ? 'pos' : (v < -0.0001 ? 'neg' : ''); }
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function bookName(id) {
+    var b = S.books.find(function (x) { return x.id === id; });
+    return b ? b.name : '—';
+  }
+
+  /* ── Math ───────────────────────────── */
+  function betProfit(b) {
+    if (b.status === 'won') return b.stake * (b.odds - 1);
+    if (b.status === 'lost') return -b.stake;
+    return 0;
+  }
+  function settled(list) {
+    return (list || S.bets).filter(function (b) { return b.status === 'won' || b.status === 'lost'; });
+  }
+  function clvOf(b) {
+    return (b.closingOdds && b.closingOdds > 1) ? (b.odds / b.closingOdds - 1) : null;
+  }
+  function sum(arr, fn) { return arr.reduce(function (a, x) { return a + fn(x); }, 0); }
+  function bookBalance(id) {
+    var dep = sum(S.txns.filter(function (t) { return t.bookId === id; }), function (t) {
+      return t.type === 'deposit' ? t.amount : -t.amount;
+    });
+    return dep + sum(settled(S.bets.filter(function (b) { return b.bookId === id; })), betProfit);
+  }
+  function capital() { return sum(S.books, function (b) { return bookBalance(b.id); }); }
+  function groupStats(bets) {
+    var st = settled(bets);
+    var staked = sum(st, function (b) { return b.stake; });
+    var profit = sum(st, betProfit);
+    var withClv = bets.filter(function (b) { return clvOf(b) !== null; });
+    return {
+      n: st.length,
+      open: bets.filter(function (b) { return b.status === 'pending'; }).length,
+      staked: staked,
+      profit: profit,
+      yield: staked > 0 ? profit / staked : null,
+      won: st.filter(function (b) { return b.status === 'won'; }).length,
+      clvN: withClv.length,
+      clvAvg: withClv.length ? sum(withClv, clvOf) / withClv.length : null,
+      clvBeat: withClv.length ? withClv.filter(function (b) { return clvOf(b) > 0; }).length / withClv.length : null
+    };
+  }
+
+  /* ── Render: header + dashboard ─────── */
+  function renderCap() {
+    var c = capital();
+    var el = document.getElementById('capTotal');
+    el.textContent = money(c);
+    el.className = 'cap-value ' + signCls(c);
+  }
+
+  function tile(label, value, cls, sub) {
+    return '<div class="tile"><span class="t-label">' + label + '</span>' +
+      '<span class="t-value ' + (cls || '') + '">' + value + '</span>' +
+      (sub ? '<div class="t-sub">' + sub + '</div>' : '') + '</div>';
+  }
+
+  function renderDash() {
+    var g = groupStats(S.bets);
+    var openStake = sum(S.bets.filter(function (b) { return b.status === 'pending'; }),
+      function (b) { return b.stake; });
+    var winRate = g.n > 0 ? g.won / g.n : null;
+    var html = '';
+    html += tile('Profitto', money(g.profit), signCls(g.profit), g.n + ' giocate chiuse');
+    html += tile('Yield', g.yield === null ? '—' : pct(g.yield), g.yield === null ? '' : signCls(g.yield), 'su ' + money(g.staked) + ' puntati');
+    html += tile('Win rate', winRate === null ? '—' : pct(winRate, 0), '', g.won + ' vinte / ' + g.n);
+    html += tile('CLV medio', g.clvAvg === null ? '—' : pct(g.clvAvg), g.clvAvg === null ? '' : signCls(g.clvAvg), g.clvN ? g.clvN + ' giocate con closing' : 'serve la closing odds');
+    html += tile('In corso', String(g.open), '', money(openStake) + ' a rischio');
+    document.getElementById('tiles').innerHTML = html;
+    renderChart();
+    renderByBook();
+    renderByCat();
+  }
+
+  function renderChart() {
+    var box = document.getElementById('chart');
+    var hint = document.getElementById('chartHint');
+    var st = settled().slice().sort(function (a, b) {
+      return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.ts || 0) - (b.ts || 0);
+    });
+    if (st.length < 2) {
+      box.innerHTML = '<p class="empty">La curva compare dopo almeno due giocate chiuse.</p>';
+      hint.textContent = '';
+      return;
+    }
+    var cum = 0, pts = st.map(function (b) { cum += betProfit(b); return cum; });
+    var W = 640, H = 200, padL = 10, padR = 64, padT = 16, padB = 16;
+    var min = Math.min(0, Math.min.apply(null, pts));
+    var max = Math.max(0, Math.max.apply(null, pts));
+    if (max - min < 1) { max += 1; min -= 1; }
+    function x(i) { return padL + i * (W - padL - padR) / (pts.length - 1); }
+    function y(v) { return padT + (max - v) / (max - min) * (H - padT - padB); }
+    var line = pts.map(function (v, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); }).join(' ');
+    var area = line + ' L' + x(pts.length - 1).toFixed(1) + ' ' + y(0).toFixed(1) +
+      ' L' + x(0).toFixed(1) + ' ' + y(0).toFixed(1) + ' Z';
+    var last = pts[pts.length - 1];
+    var endCol = last >= 0 ? 'var(--win)' : 'var(--loss)';
+    var grid = '';
+    for (var i = 1; i <= 3; i++) {
+      var gy = padT + i * (H - padT - padB) / 4;
+      grid += '<line x1="' + padL + '" y1="' + gy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + gy.toFixed(1) + '" stroke="var(--line-soft)" stroke-width="1"/>';
+    }
+    box.innerHTML =
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Curva del profitto cumulato">' +
+      grid +
+      '<line x1="' + padL + '" y1="' + y(0).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y(0).toFixed(1) + '" stroke="var(--line)" stroke-dasharray="3 4" stroke-width="1"/>' +
+      '<path d="' + area + '" fill="var(--gold-soft)" stroke="none"/>' +
+      '<path d="' + line + '" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>' +
+      '<circle cx="' + x(pts.length - 1).toFixed(1) + '" cy="' + y(last).toFixed(1) + '" r="3.5" fill="' + endCol + '"/>' +
+      '<text x="' + (W - padR + 8) + '" y="' + (y(last) + 4).toFixed(1) + '" fill="' + endCol + '" font-size="12" font-family="ui-monospace, Menlo, monospace">' + money(last) + '</text>' +
+      '</svg>';
+    hint.textContent = st[0].date + ' → ' + st[st.length - 1].date;
+  }
+
+  function statsTable(rows, firstCol) {
+    if (!rows.length) return '<p class="empty">Ancora nessun dato.</p>';
+    var h = '<table><thead><tr><th>' + firstCol + '</th><th class="num">Chiuse</th><th class="num">Profitto</th><th class="num">Yield</th><th class="num">CLV</th></tr></thead><tbody>';
+    rows.forEach(function (r) {
+      h += '<tr><td>' + esc(r.label) + '</td>' +
+        '<td class="num">' + r.g.n + '</td>' +
+        '<td class="num ' + signCls(r.g.profit) + '">' + money(r.g.profit) + '</td>' +
+        '<td class="num ' + (r.g.yield === null ? '' : signCls(r.g.yield)) + '">' + (r.g.yield === null ? '—' : pct(r.g.yield)) + '</td>' +
+        '<td class="num ' + (r.g.clvAvg === null ? '' : signCls(r.g.clvAvg)) + '">' + (r.g.clvAvg === null ? '—' : pct(r.g.clvAvg)) + '</td></tr>';
+    });
+    return h + '</tbody></table>';
+  }
+
+  function renderByBook() {
+    var rows = S.books.map(function (bk) {
+      return { label: bk.name, g: groupStats(S.bets.filter(function (b) { return b.bookId === bk.id; })) };
+    }).filter(function (r) { return r.g.n + r.g.open > 0; });
+    document.getElementById('byBook').innerHTML = statsTable(rows, 'Casa');
+  }
+
+  function categories() {
+    var set = {};
+    S.bets.forEach(function (b) { if (b.category) set[b.category] = true; });
+    return Object.keys(set).sort();
+  }
+
+  function renderByCat() {
+    var rows = categories().map(function (c) {
+      return { label: c, g: groupStats(S.bets.filter(function (b) { return b.category === c; })) };
+    });
+    document.getElementById('byCat').innerHTML = statsTable(rows, 'Categoria');
+  }
+
+  /* ── Render: giocate ────────────────── */
+  function renderBetForm() {
+    var sel = document.getElementById('betBook');
+    sel.innerHTML = S.books.length
+      ? S.books.map(function (b) { return '<option value="' + b.id + '">' + esc(b.name) + '</option>'; }).join('')
+      : '<option value="">Prima aggiungi una casa</option>';
+    document.getElementById('catList').innerHTML =
+      categories().map(function (c) { return '<option value="' + esc(c) + '"></option>'; }).join('');
+  }
+
+  var STATUS_LABEL = { pending: 'In corso', won: 'Vinta', lost: 'Persa', void: 'Void' };
+
+  function renderBets() {
+    var filter = document.getElementById('betFilter').value;
+    var list = S.bets.slice().sort(function (a, b) {
+      return a.date < b.date ? 1 : a.date > b.date ? -1 : (b.ts || 0) - (a.ts || 0);
+    }).filter(function (b) {
+      if (filter === 'pending') return b.status === 'pending';
+      if (filter === 'settled') return b.status !== 'pending';
+      return true;
+    });
+    var box = document.getElementById('betList');
+    if (!list.length) {
+      box.innerHTML = '<p class="empty">' + (S.bets.length ? 'Nessuna giocata con questo filtro.' :
+        'Nessuna giocata registrata. Aggiungi la prima qui sopra — serve almeno una casa (tab Case).') + '</p>';
+      return;
+    }
+    box.innerHTML = list.map(function (b) {
+      var p = betProfit(b);
+      var clv = clvOf(b);
+      var actions = '';
+      if (b.status === 'pending') {
+        actions = '<button class="btn btn-sm btn-win" data-act="won" data-id="' + b.id + '">Vinta</button>' +
+          '<button class="btn btn-sm btn-loss" data-act="lost" data-id="' + b.id + '">Persa</button>' +
+          '<button class="btn btn-sm btn-ghost" data-act="void" data-id="' + b.id + '">Void</button>';
+      } else {
+        actions = '<button class="btn btn-sm btn-ghost" data-act="reopen" data-id="' + b.id + '">Riapri</button>';
+      }
+      actions += '<button class="btn btn-sm btn-ghost" data-act="del" data-id="' + b.id + '" aria-label="Elimina giocata">✕</button>';
+      return '<div class="bet">' +
+        '<div class="b-main"><div class="b-desc">' + esc(b.desc) + '</div>' +
+        '<div class="b-meta">' + esc(b.date) + ' · ' + esc(bookName(b.bookId)) + ' · ' + esc(b.betType) +
+        (b.category ? ' · <span class="chip chip-cat">' + esc(b.category) + '</span>' : '') + '</div></div>' +
+        '<div class="b-nums"><span title="Quota">@' + b.odds.toFixed(2) + '</span>' +
+        '<span title="Stake">' + money(b.stake) + '</span>' +
+        (b.status !== 'pending' && b.status !== 'void' ? '<span class="' + signCls(p) + '">' + money(p) + '</span>' : '') +
+        (clv !== null ? '<span class="' + signCls(clv) + '" title="Closing Line Value">CLV ' + pct(clv) + '</span>' : '') +
+        '</div>' +
+        '<span class="chip chip-' + b.status + '">' + STATUS_LABEL[b.status] + '</span>' +
+        '<div class="b-act">' +
+        '<input class="co-input" type="number" step="0.01" min="1.01" placeholder="closing" ' +
+        'value="' + (b.closingOdds || '') + '" data-co="' + b.id + '" title="Closing odds">' +
+        actions + '</div></div>';
+    }).join('');
+  }
+
+  /* ── Render: case ───────────────────── */
+  function renderBooks() {
+    var box = document.getElementById('bookList');
+    if (!S.books.length) {
+      box.innerHTML = '<p class="empty">Nessuna casa registrata. Aggiungine una: ogni casa ha il suo saldo, i movimenti e le statistiche.</p>';
+      return;
+    }
+    box.innerHTML = S.books.map(function (bk) {
+      var bal = bookBalance(bk.id);
+      var g = groupStats(S.bets.filter(function (b) { return b.bookId === bk.id; }));
+      var txns = S.txns.filter(function (t) { return t.bookId === bk.id; })
+        .sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); }).slice(0, 4);
+      return '<div class="card">' +
+        '<div class="card-head"><h2>' + esc(bk.name) + '</h2>' +
+        '<button class="btn btn-sm btn-ghost" data-act="delbook" data-id="' + bk.id + '" aria-label="Elimina casa">✕</button></div>' +
+        '<div class="book-balance ' + signCls(bal) + '">' + money(bal) + '</div>' +
+        '<div class="hint">Profitto giocate: <span class="' + signCls(g.profit) + '">' + money(g.profit) + '</span>' +
+        (g.yield !== null ? ' · yield ' + pct(g.yield) : '') + (g.open ? ' · ' + g.open + ' in corso' : '') + '</div>' +
+        '<div class="book-row">' +
+        '<input type="number" step="0.01" min="0.01" placeholder="Importo €" data-amt="' + bk.id + '">' +
+        '<button class="btn btn-sm" data-act="dep" data-id="' + bk.id + '">Deposito</button>' +
+        '<button class="btn btn-sm" data-act="wd" data-id="' + bk.id + '">Prelievo</button>' +
+        '</div>' +
+        (txns.length ? '<div style="margin-top:10px">' + txns.map(function (t) {
+          return '<div class="txn"><span>' + esc(t.date) + ' · ' + (t.type === 'deposit' ? 'deposito' : 'prelievo') + '</span>' +
+            '<span>' + (t.type === 'deposit' ? '+' : '−') + money(t.amount) + '</span></div>';
+        }).join('') + '</div>' : '') +
+        '</div>';
+    }).join('');
+  }
+
+  /* ── Render: Thorp ──────────────────── */
+  function renderKelly() {
+    var out = document.getElementById('kellyOut');
+    var p = parseFloat(document.getElementById('kProb').value) / 100;
+    var odds = parseFloat(document.getElementById('kOdds').value);
+    var bank = parseFloat(document.getElementById('kBank').value);
+    var frac = parseFloat(document.getElementById('kFrac').value);
+    if (!(p > 0 && p < 1) || !(odds > 1)) {
+      out.innerHTML = '<p class="note">Inserisci probabilità e quota: il calcolatore mostra se c&rsquo;è value e quanto puntare.</p>';
+      return;
+    }
+    var ev = p * odds - 1;               // valore atteso per € puntato
+    var b = odds - 1;
+    var fair = 1 / p;
+    if (ev <= 0) {
+      out.innerHTML = '<div class="kelly-stake neg">€ 0</div>' +
+        '<p class="note">Nessun vantaggio a queste condizioni (EV ' + pct(ev) + ', quota equa ' + fair.toFixed(2) + '). ' +
+        'Kelly dice di <strong>non puntare</strong>: senza edge, nessuno stake è quello giusto.</p>';
+      return;
+    }
+    var full = ev / b;                   // frazione Kelly piena
+    var f = full * frac;
+    var stake = (bank > 0) ? bank * f : null;
+    out.innerHTML =
+      '<div class="kelly-stake pos">' + (stake !== null ? money(stake) : pct(f)) + '</div>' +
+      '<div class="kelly-grid">' +
+      '<div><span class="k-label">Value (EV)</span><span class="k-val pos">' + pct(ev) + '</span></div>' +
+      '<div><span class="k-label">Quota equa</span><span class="k-val">' + fair.toFixed(2) + '</span></div>' +
+      '<div><span class="k-label">Kelly pieno</span><span class="k-val">' + pct(full) + '</span></div>' +
+      '<div><span class="k-label">Stake (frazione ' + (frac === 1 ? 'piena' : frac === 0.5 ? '½' : '¼') + ')</span><span class="k-val">' + pct(f) + ' del bankroll</span></div>' +
+      '</div>' +
+      (full > 0.2 ? '<p class="warn">Kelly pieno sopra il 20%: quasi certamente la probabilità stimata è troppo ottimista. Ricontrolla prima di puntare.</p>' : '');
+  }
+
+  function renderClv() {
+    var withClv = S.bets.filter(function (b) { return clvOf(b) !== null; });
+    var box = document.getElementById('clvBox');
+    if (!withClv.length) {
+      box.innerHTML = '<p class="note">Registra la <strong>closing odds</strong> (la quota di chiusura del mercato) sulle tue giocate: ' +
+        'il confronto con la quota presa è il modo statisticamente serio di capire se stai battendo il book o se è solo varianza. ' +
+        'È l&rsquo;analogo sportivo del conteggio di Thorp.</p>';
+      return;
+    }
+    var avg = sum(withClv, clvOf) / withClv.length;
+    var beat = withClv.filter(function (b) { return clvOf(b) > 0; }).length;
+    box.innerHTML =
+      '<div class="kelly-grid">' +
+      '<div><span class="k-label">CLV medio</span><span class="k-val ' + signCls(avg) + '">' + pct(avg) + '</span></div>' +
+      '<div><span class="k-label">Battute la chiusura</span><span class="k-val">' + beat + ' / ' + withClv.length + '</span></div>' +
+      '</div>' +
+      '<p class="note" style="margin-top:10px">' + (avg > 0
+        ? 'CLV medio positivo: se resta tale su un campione ampio, stai davvero battendo il mercato.'
+        : 'CLV medio negativo: finora il mercato chiude meglio delle tue quote — l&rsquo;eventuale profitto è più varianza che edge.') + '</p>';
+  }
+
+  function renderEdge() {
+    var box = document.getElementById('edgeBox');
+    var cats = categories();
+    if (!cats.length) {
+      box.innerHTML = '<p class="note">Assegna una categoria alle giocate per scoprire dove il tuo vantaggio c&rsquo;è davvero — e dove no.</p>';
+      return;
+    }
+    var h = '<table><thead><tr><th>Categoria</th><th class="num">Chiuse</th><th class="num">Yield</th><th class="num">CLV</th><th>Verdetto</th></tr></thead><tbody>';
+    cats.forEach(function (c) {
+      var g = groupStats(S.bets.filter(function (b) { return b.category === c; }));
+      var verdict;
+      if (g.clvAvg !== null && g.clvAvg > 0 && (g.yield === null || g.yield >= 0)) {
+        verdict = '<span class="chip chip-won">edge</span>';
+      } else if (g.clvAvg !== null && g.clvAvg <= 0) {
+        verdict = '<span class="chip chip-lost">no edge</span>';
+      } else {
+        verdict = '<span class="chip chip-pending">dati scarsi</span>';
+      }
+      h += '<tr><td>' + esc(c) + '</td><td class="num">' + g.n + '</td>' +
+        '<td class="num ' + (g.yield === null ? '' : signCls(g.yield)) + '">' + (g.yield === null ? '—' : pct(g.yield)) + '</td>' +
+        '<td class="num ' + (g.clvAvg === null ? '' : signCls(g.clvAvg)) + '">' + (g.clvAvg === null ? '—' : pct(g.clvAvg)) + '</td>' +
+        '<td>' + verdict + '</td></tr>';
+    });
+    box.innerHTML = h + '</tbody></table>';
+  }
+
+  function renderAll() {
+    renderCap();
+    renderDash();
+    renderBetForm();
+    renderBets();
+    renderBooks();
+    renderClv();
+    renderEdge();
+    var kb = document.getElementById('kBank');
+    if (!kb.matches(':focus') && kb.value === '') kb.value = capital() > 0 ? capital().toFixed(2) : '';
+  }
+
+  /* ── Tabs ───────────────────────────── */
+  function showView(name) {
+    document.querySelectorAll('.view').forEach(function (v) { v.hidden = v.id !== 'view-' + name; });
+    document.querySelectorAll('.tabs button').forEach(function (t) {
+      t.setAttribute('aria-selected', String(t.dataset.view === name));
+    });
+    lsSet('bb-tab', name);
+  }
+  document.querySelector('.tabs').addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-view]');
+    if (btn) showView(btn.dataset.view);
+  });
+
+  /* ── Events: giocate ────────────────── */
+  document.getElementById('betForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (!S.books.length) { showView('books'); return; }
+    var closing = parseFloat(document.getElementById('betClosing').value);
+    var bet = {
+      id: uid(), ts: Date.now(),
+      date: document.getElementById('betDate').value,
+      bookId: document.getElementById('betBook').value,
+      betType: document.getElementById('betType').value,
+      category: document.getElementById('betCat').value.trim(),
+      desc: document.getElementById('betDesc').value.trim(),
+      odds: parseFloat(document.getElementById('betOdds').value),
+      stake: parseFloat(document.getElementById('betStake').value),
+      closingOdds: closing > 1 ? closing : null,
+      status: 'pending'
+    };
+    put('bets', bet).then(function () {
+      ['betDesc', 'betOdds', 'betStake', 'betClosing'].forEach(function (id) {
+        document.getElementById(id).value = '';
+      });
+      reload();
+    });
+  });
+
+  document.getElementById('betFilter').addEventListener('change', renderBets);
+
+  document.getElementById('betList').addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    var id = btn.dataset.id;
+    var bet = S.bets.find(function (b) { return b.id === id; });
+    if (!bet) return;
+    if (btn.dataset.act === 'del') {
+      if (!confirm('Eliminare questa giocata?')) return;
+      del('bets', id).then(reload);
+      return;
+    }
+    bet.status = btn.dataset.act === 'reopen' ? 'pending' : btn.dataset.act;
+    put('bets', bet).then(reload);
+  });
+
+  document.getElementById('betList').addEventListener('change', function (e) {
+    var inp = e.target.closest('input[data-co]');
+    if (!inp) return;
+    var bet = S.bets.find(function (b) { return b.id === inp.dataset.co; });
+    if (!bet) return;
+    var v = parseFloat(inp.value);
+    bet.closingOdds = v > 1 ? v : null;
+    put('bets', bet).then(reload);
+  });
+
+  /* ── Events: case ───────────────────── */
+  document.getElementById('bookForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var name = document.getElementById('bookName').value.trim();
+    if (!name) return;
+    put('books', { id: uid(), name: name, ts: Date.now() }).then(function () {
+      document.getElementById('bookName').value = '';
+      reload();
+    });
+  });
+
+  document.getElementById('bookList').addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    var id = btn.dataset.id;
+    if (btn.dataset.act === 'delbook') {
+      var used = S.bets.some(function (b) { return b.bookId === id; });
+      if (used) { alert('Questa casa ha giocate registrate: elimina prima quelle (o tienila per lo storico).'); return; }
+      if (!confirm('Eliminare la casa e i suoi movimenti?')) return;
+      Promise.all(S.txns.filter(function (t) { return t.bookId === id; })
+        .map(function (t) { return del('txns', t.id); }))
+        .then(function () { return del('books', id); }).then(reload);
+      return;
+    }
+    if (btn.dataset.act === 'dep' || btn.dataset.act === 'wd') {
+      var inp = document.querySelector('input[data-amt="' + id + '"]');
+      var amount = parseFloat(inp.value);
+      if (!(amount > 0)) { inp.focus(); return; }
+      put('txns', {
+        id: uid(), ts: Date.now(), bookId: id,
+        type: btn.dataset.act === 'dep' ? 'deposit' : 'withdraw',
+        amount: amount,
+        date: new Date().toISOString().slice(0, 10)
+      }).then(reload);
+    }
+  });
+
+  /* ── Events: Kelly ──────────────────── */
+  ['kProb', 'kOdds', 'kBank', 'kFrac'].forEach(function (id) {
+    document.getElementById(id).addEventListener('input', renderKelly);
+  });
+
+  /* ── Export / import ────────────────── */
+  function download(name, type, content) {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([content], { type: type }));
+    a.download = name;
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+  }
+  document.getElementById('expJson').addEventListener('click', function () {
+    download('battibanco-' + new Date().toISOString().slice(0, 10) + '.json', 'application/json',
+      JSON.stringify({ exportedAt: new Date().toISOString(), books: S.books, bets: S.bets, txns: S.txns }, null, 2));
+  });
+  document.getElementById('expCsv').addEventListener('click', function () {
+    var rows = [['data', 'casa', 'tipo', 'categoria', 'descrizione', 'quota', 'stake', 'esito', 'closing_odds', 'clv', 'profitto']];
+    S.bets.slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; }).forEach(function (b) {
+      var clv = clvOf(b);
+      rows.push([b.date, bookName(b.bookId), b.betType, b.category || '', b.desc,
+        b.odds, b.stake, STATUS_LABEL[b.status], b.closingOdds || '',
+        clv === null ? '' : (clv * 100).toFixed(2), betProfit(b).toFixed(2)]);
+    });
+    var csv = rows.map(function (r) {
+      return r.map(function (c) {
+        c = String(c);
+        return /[";\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c;
+      }).join(';');
+    }).join('\n');
+    download('battibanco-giocate.csv', 'text/csv', '﻿' + csv);
+  });
+  document.getElementById('impBtn').addEventListener('click', function () {
+    document.getElementById('impFile').click();
+  });
+  document.getElementById('impFile').addEventListener('change', function (e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    file.text().then(function (txt) {
+      var data = JSON.parse(txt);
+      if (!data || !Array.isArray(data.books) || !Array.isArray(data.bets)) throw new Error('formato');
+      if (!confirm('Importare il backup? I dati attuali verranno sostituiti.')) return;
+      return Promise.all([clearStore('books'), clearStore('bets'), clearStore('txns')]).then(function () {
+        return Promise.all(
+          data.books.map(function (b) { return put('books', b); })
+            .concat(data.bets.map(function (b) { return put('bets', b); }))
+            .concat((data.txns || []).map(function (t) { return put('txns', t); }))
+        );
+      }).then(reload);
+    }).catch(function () {
+      alert('File non valido: serve un export JSON di Batti il Banco.');
+    }).finally(function () { e.target.value = ''; });
+  });
+
+  /* ── Init ───────────────────────────── */
+  openDB().then(function (d) {
+    db = d;
+    document.getElementById('betDate').value = new Date().toISOString().slice(0, 10);
+    showView(lsGet('bb-tab') || 'dash');
+    return reload();
+  }).catch(function (err) {
+    document.querySelector('.wrap').insertAdjacentHTML('afterbegin',
+      '<div class="card" style="border-color:var(--loss)"><p class="note">Impossibile aprire il database locale (' +
+      esc(err && err.message) + '). Il tracker richiede IndexedDB.</p></div>');
+  });
+})();
+</script>
+        <script is:inline>
+            if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+        </script>
+    </body>
+</html>
