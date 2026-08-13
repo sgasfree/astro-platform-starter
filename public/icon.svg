@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+    <rect width="128" height="128" rx="24" fill="#0C1215"/>
+    <rect x="4" y="4" width="120" height="120" rx="20" fill="none" stroke="#223038" stroke-width="2"/>
+    <text x="64" y="88" text-anchor="middle" font-family="Iowan Old Style, Palatino, Georgia, serif" font-size="72" font-weight="600" fill="#D9A441">B!</text>
+</svg>
