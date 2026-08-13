@@ -1,0 +1,110 @@
+---
+// Guida all'uso di Batti il Banco: come inserire i dati e cosa significano i termini.
+---
+
+<!doctype html>
+<html lang="it">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Guida — Batti il Banco</title>
+        <meta name="description" content="Come inserire i dati correttamente e cosa significano quota, stake, yield, CLV, Kelly e gli altri termini." />
+        <meta name="theme-color" content="#0C1215" />
+        <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    </head>
+    <body>
+        <style is:inline>
+            :root {
+                --bg: #0C1215;
+                --panel: #131B1F;
+                --line: #223038;
+                --line-soft: #1A262C;
+                --text: #E6ECE9;
+                --muted: #90A39F;
+                --gold: #D9A441;
+                --gold-soft: rgba(217, 164, 65, 0.14);
+                --win: #46C98C;
+                --loss: #E06A55;
+                --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+                --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+                --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+            }
+            * { box-sizing: border-box; }
+            html, body { margin: 0; padding: 0; }
+            body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 16px; line-height: 1.65; -webkit-font-smoothing: antialiased; }
+            .wrap { max-width: 720px; margin: 0 auto; padding: 24px 18px 64px; }
+            a { color: var(--gold); }
+            .back { display: inline-block; font-size: 0.85rem; text-decoration: none; margin-bottom: 18px; }
+            .back:hover { text-decoration: underline; }
+            h1 { font-family: var(--serif); color: var(--gold); font-size: 1.8rem; font-weight: 600; margin: 0 0 4px; text-wrap: balance; }
+            .sub { color: var(--muted); font-size: 0.85rem; margin: 0 0 28px; }
+            h2 { font-family: var(--serif); font-size: 1.25rem; font-weight: 600; margin: 36px 0 12px; padding-top: 18px; border-top: 1px solid var(--line); }
+            h2:first-of-type { border-top: none; padding-top: 0; margin-top: 24px; }
+            p, li { max-width: 65ch; }
+            ol, ul { padding-left: 22px; }
+            li { margin-bottom: 8px; }
+            .term { margin: 0 0 14px; padding-left: 14px; border-left: 2px solid var(--line); }
+            .term dt { font-weight: 600; color: var(--gold); }
+            .term dd { margin: 2px 0 0; color: var(--text); max-width: 62ch; }
+            .term .eg { display: block; margin-top: 4px; font-size: 0.85rem; color: var(--muted); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+            .do { color: var(--win); font-weight: 600; }
+            .dont { color: var(--loss); font-weight: 600; }
+            .note { background: var(--panel); border: 1px solid var(--line-soft); border-left: 2px solid var(--gold); border-radius: 6px; padding: 12px 16px; font-size: 0.9rem; margin: 16px 0; max-width: 65ch; }
+            code { font-family: var(--mono); background: var(--panel); border: 1px solid var(--line-soft); border-radius: 4px; padding: 1px 6px; font-size: 0.85em; }
+        </style>
+
+        <div class="wrap">
+            <a class="back" href="/">← Torna al tracker</a>
+            <h1>Guida rapida</h1>
+            <p class="sub">Come inserire i dati in modo corretto — e cosa significano i termini che l&rsquo;app usa.</p>
+
+            <h2>1. Il primo giorno: le case</h2>
+            <ol>
+                <li>Nella tab <strong>Case</strong> crea una casa per ogni bookmaker dove hai un conto.</li>
+                <li>Per ciascuna registra un <strong>deposito pari al saldo attuale</strong> del conto — non ai soldi versati in passato. Il saldo di oggi è il punto di partenza.</li>
+                <li>Controlla che il <strong>capitale totale</strong> in alto corrisponda al centesimo alla somma reale dei tuoi conti. Se torna, sei pronto.</li>
+            </ol>
+            <div class="note">Da qui in poi usa <strong>depositi e prelievi solo per soldi veri</strong> che entrano o escono dai conti (bonifici, ricariche). Le vincite e le perdite <em>non</em> si registrano come movimenti: le calcola l&rsquo;app dagli esiti delle giocate.</div>
+
+            <h2>2. Registrare una giocata</h2>
+            <ol>
+                <li>Inseriscila <strong>nel momento in cui la piazzi</strong>, non a fine giornata: la quota presa è un dato che si dimentica in fretta.</li>
+                <li><strong>Quota</strong>: quella in formato decimale (es. <code>1.95</code>) al momento della puntata.</li>
+                <li><strong>Stake</strong>: l&rsquo;importo reale puntato in euro.</li>
+                <li><strong>Multipla</strong>: una sola giocata con la <strong>quota totale</strong> della schedina — non una riga per ogni partita.</li>
+                <li><strong>Categoria</strong>: scegli 3–5 etichette fisse (es. <code>Serie A over</code>, <code>Tennis ATP</code>) e usale sempre identiche. È la chiave del modulo edge: <code>Serie A over</code> e <code>over serieA</code> per l&rsquo;app sono due categorie diverse.</li>
+                <li><strong>Closing odds</strong>: poco prima dell&rsquo;inizio dell&rsquo;evento, torna sulla giocata e scrivi la quota a cui il mercato ha chiuso <em>lo stesso esito</em> (idealmente sullo stesso bookmaker). Si può inserire anche a giocata già chiusa.</li>
+                <li><strong>Esito</strong>: a evento finito segna Vinta o Persa. <strong>Void</strong> = scommessa annullata/rimborsata (conta zero). &ldquo;Riapri&rdquo; serve solo a correggere un errore.</li>
+            </ol>
+
+            <h2>3. I termini, in breve</h2>
+            <dl>
+                <div class="term"><dt>Quota (decimale)</dt><dd>Quanto incassi per ogni euro puntato, stake compreso.<span class="eg">quota 2.00 × 10 € = 20 € incassati → 10 € di profitto</span></dd></div>
+                <div class="term"><dt>Stake</dt><dd>La somma puntata sulla singola giocata.</dd></div>
+                <div class="term"><dt>Bankroll / Capitale</dt><dd>La somma dei saldi di tutte le case: i soldi totali dedicati al gioco. È la base su cui il Kelly calcola lo stake.</dd></div>
+                <div class="term"><dt>Profitto</dt><dd>Vincita netta: se vinci, stake × (quota − 1); se perdi, −stake.</dd></div>
+                <div class="term"><dt>Yield</dt><dd>Profitto diviso il totale puntato: misura la <em>qualità</em> delle tue scelte indipendentemente da quanto punti. Un 5% su tante giocate è un ottimo risultato.<span class="eg">+30 € su 600 € puntati → yield 5%</span></dd></div>
+                <div class="term"><dt>Win rate</dt><dd>Percentuale di giocate vinte. Da sola <strong>non dice nulla</strong>: chi punta quote alte vince di rado ma può guadagnare; chi punta quote basse vince spesso e può perdere.</dd></div>
+                <div class="term"><dt>Value / EV (valore atteso)</dt><dd>Il guadagno medio atteso per euro puntato, dato dalla tua probabilità stimata: probabilità × quota − 1. Positivo = la quota paga più di quanto l&rsquo;esito sia raro.<span class="eg">55% × 2.00 − 1 = +10% → c&rsquo;è value</span></dd></div>
+                <div class="term"><dt>Quota equa</dt><dd>La quota &ldquo;giusta&rdquo; per la tua stima: 1 ÷ probabilità. C&rsquo;è value solo se la quota offerta è più alta della quota equa.<span class="eg">55% → quota equa 1.82; offerta 2.00 → value</span></dd></div>
+                <div class="term"><dt>Criterio di Kelly</dt><dd>La frazione di bankroll da puntare in proporzione al vantaggio: EV ÷ (quota − 1). L&rsquo;app usa il <strong>Kelly frazionato</strong> (¼ di default) perché quello pieno presume stime perfette. Se non c&rsquo;è vantaggio, la risposta è <strong>zero</strong>: nessuna puntata è quella giusta.</dd></div>
+                <div class="term"><dt>Closing odds</dt><dd>La quota di chiusura: l&rsquo;ultima disponibile prima dell&rsquo;inizio dell&rsquo;evento. È la stima più accurata del mercato, perché incorpora tutte le informazioni e le puntate arrivate.</dd></div>
+                <div class="term"><dt>CLV (Closing Line Value)</dt><dd>Confronto tra la tua quota e la closing: (tua quota ÷ closing) − 1. Positivo = hai puntato a condizioni migliori del mercato. Un CLV medio positivo su molte giocate è il segnale statisticamente serio che hai un edge vero — molto più del profitto a breve termine, che può essere solo fortuna.<span class="eg">presa 2.10, chiusa 1.95 → CLV +7,7%</span></dd></div>
+                <div class="term"><dt>Edge</dt><dd>Il vantaggio sistematico sul bookmaker. Nell&rsquo;app lo leggi per categoria: CLV positivo e yield positivo insieme, su un campione ampio.</dd></div>
+            </dl>
+
+            <h2>4. Gli errori da evitare</h2>
+            <ul>
+                <li><span class="dont">Non</span> registrare le vincite come depositi: falsano saldi e statistiche.</li>
+                <li><span class="dont">Non</span> cambiare grafia alle categorie: spezzano le statistiche in rivoli inutili.</li>
+                <li><span class="dont">Non</span> dimenticare la closing odds: senza, il CLV — il dato più prezioso dell&rsquo;app — resta vuoto.</li>
+                <li><span class="dont">Non</span> trarre conclusioni da 10–20 giocate: yield e CLV parlano da 50 giocate in su. Prima è quasi tutto rumore.</li>
+                <li><span class="do">Sì</span> all&rsquo;export JSON una volta a settimana: i dati vivono solo sul tuo telefono, il backup sei tu.</li>
+            </ul>
+
+            <div class="note"><strong>Il principio di tutto</strong> (da <em>Beat the Dealer</em> di E. O. Thorp): la puntata si dimensiona in proporzione al vantaggio che hai, mai in reazione ai risultati precedenti. Se il vantaggio non c&rsquo;è, la puntata giusta è zero.</div>
+
+            <p><a href="/">← Torna al tracker</a></p>
+        </div>
+    </body>
+</html>
