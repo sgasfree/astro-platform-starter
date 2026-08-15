@@ -285,10 +285,7 @@
           <option value="Basket">Basket</option>
           <option value="Altro">Altro</option>
         </select></label>
-        <label class="fld">Tipo<select id="betType">
-          <option value="singola">Singola</option>
-          <option value="multipla">Multipla</option>
-        </select></label>
+        <label class="fld">Tipo<select id="betType"></select></label>
         <label class="fld">Categoria<input id="betCat" list="catList" placeholder="es. Serie A over"></label>
         <datalist id="catList"></datalist>
         <label class="fld full">Descrizione<input id="betDesc" placeholder="es. Milan–Inter, over 2.5" required></label>
@@ -607,6 +604,24 @@
       categories().map(function (c) { return '<option value="' + esc(c) + '"></option>'; }).join('');
   }
 
+  var SPORT_TYPES = {
+    Calcio: ['Singola', 'Multipla', 'Over', 'Angoli', 'Gol', 'Risultato esatto', 'Combo', 'Marcatore', 'Ammonito'],
+    Tennis: ['Over', 'Singola', 'Multipla', 'Ace', 'Risultato esatto'],
+    Pallavolo: ['Singola', 'Over set', 'Over', 'Risultato esatto', 'Set'],
+    Basket: ['Singola', 'Multipla', 'Over', 'Risultato esatto'],
+    Altro: ['Singola', 'Multipla', 'Altro']
+  };
+  function fillTypes() {
+    var sport = document.getElementById('betSport').value;
+    var sel = document.getElementById('betType');
+    var prev = sel.value;
+    var types = SPORT_TYPES[sport] || SPORT_TYPES.Altro;
+    sel.innerHTML = types.map(function (t) {
+      return '<option value="' + t.toLowerCase() + '">' + t + '</option>';
+    }).join('');
+    if (types.some(function (t) { return t.toLowerCase() === prev; })) sel.value = prev;
+  }
+
   var STATUS_LABEL = { pending: 'In corso', won: 'Vinta', lost: 'Persa', void: 'Void' };
 
   function renderBets() {
@@ -816,6 +831,8 @@
     });
   });
 
+  document.getElementById('betSport').addEventListener('change', fillTypes);
+
   document.getElementById('betFilter').addEventListener('change', renderBets);
 
   document.getElementById('betList').addEventListener('click', function (e) {
@@ -939,6 +956,7 @@
   openDB().then(function (d) {
     db = d;
     document.getElementById('betDate').value = new Date().toISOString().slice(0, 10);
+    fillTypes();
     showView(lsGet('bb-tab') || 'dash');
     return reload();
   }).catch(function (err) {
