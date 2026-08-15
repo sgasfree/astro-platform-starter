@@ -267,6 +267,7 @@
     <div class="cols">
       <div class="card"><h2>Per casa</h2><div class="tbl-wrap" id="byBook"></div></div>
       <div class="card"><h2>Per categoria</h2><div class="tbl-wrap" id="byCat"></div></div>
+      <div class="card"><h2>Per sport</h2><div class="tbl-wrap" id="bySport"></div></div>
     </div>
   </section>
 
@@ -277,6 +278,13 @@
       <form id="betForm" class="frm">
         <label class="fld">Data<input type="date" id="betDate" required></label>
         <label class="fld">Casa<select id="betBook" required></select></label>
+        <label class="fld">Sport<select id="betSport">
+          <option value="Calcio">Calcio</option>
+          <option value="Tennis">Tennis</option>
+          <option value="Pallavolo">Pallavolo</option>
+          <option value="Basket">Basket</option>
+          <option value="Altro">Altro</option>
+        </select></label>
         <label class="fld">Tipo<select id="betType">
           <option value="singola">Singola</option>
           <option value="multipla">Multipla</option>
@@ -504,6 +512,7 @@
     renderChart();
     renderByBook();
     renderByCat();
+    renderBySport();
   }
 
   function renderChart() {
@@ -572,6 +581,15 @@
     return Object.keys(set).sort();
   }
 
+  function renderBySport() {
+    var set = {};
+    S.bets.forEach(function (b) { if (b.sport) set[b.sport] = true; });
+    var rows = Object.keys(set).sort().map(function (s) {
+      return { label: s, g: groupStats(S.bets.filter(function (b) { return b.sport === s; })) };
+    });
+    document.getElementById('bySport').innerHTML = statsTable(rows, 'Sport');
+  }
+
   function renderByCat() {
     var rows = categories().map(function (c) {
       return { label: c, g: groupStats(S.bets.filter(function (b) { return b.category === c; })) };
@@ -620,7 +638,7 @@
       actions += '<button class="btn btn-sm btn-ghost" data-act="del" data-id="' + b.id + '" aria-label="Elimina giocata">✕</button>';
       return '<div class="bet">' +
         '<div class="b-main"><div class="b-desc">' + esc(b.desc) + '</div>' +
-        '<div class="b-meta">' + esc(b.date) + ' · ' + esc(bookName(b.bookId)) + ' · ' + esc(b.betType) +
+        '<div class="b-meta">' + esc(b.date) + ' · ' + esc(bookName(b.bookId)) + (b.sport ? ' · ' + esc(b.sport) : '') + ' · ' + esc(b.betType) +
         (b.category ? ' · <span class="chip chip-cat">' + esc(b.category) + '</span>' : '') + '</div></div>' +
         '<div class="b-nums"><span title="Quota">@' + b.odds.toFixed(2) + '</span>' +
         '<span title="Stake">' + money(b.stake) + '</span>' +
@@ -781,6 +799,7 @@
       id: uid(), ts: Date.now(),
       date: document.getElementById('betDate').value,
       bookId: document.getElementById('betBook').value,
+      sport: document.getElementById('betSport').value,
       betType: document.getElementById('betType').value,
       category: document.getElementById('betCat').value.trim(),
       desc: document.getElementById('betDesc').value.trim(),
@@ -879,10 +898,10 @@
       JSON.stringify({ exportedAt: new Date().toISOString(), books: S.books, bets: S.bets, txns: S.txns }, null, 2));
   });
   document.getElementById('expCsv').addEventListener('click', function () {
-    var rows = [['data', 'casa', 'tipo', 'categoria', 'descrizione', 'quota', 'stake', 'esito', 'closing_odds', 'clv', 'profitto']];
+    var rows = [['data', 'casa', 'sport', 'tipo', 'categoria', 'descrizione', 'quota', 'stake', 'esito', 'closing_odds', 'clv', 'profitto']];
     S.bets.slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; }).forEach(function (b) {
       var clv = clvOf(b);
-      rows.push([b.date, bookName(b.bookId), b.betType, b.category || '', b.desc,
+      rows.push([b.date, bookName(b.bookId), b.sport || '', b.betType, b.category || '', b.desc,
         b.odds, b.stake, STATUS_LABEL[b.status], b.closingOdds || '',
         clv === null ? '' : (clv * 100).toFixed(2), betProfit(b).toFixed(2)]);
     });
