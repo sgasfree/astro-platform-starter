@@ -526,50 +526,86 @@
   function renderChart() {
     var box = document.getElementById('chart');
     var hint = document.getElementById('chartHint');
+    var info = document.getElementById('chartInfo');
     var st = settled().slice().sort(function (a, b) {
       return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.ts || 0) - (b.ts || 0);
     });
     if (st.length < 2) {
       box.innerHTML = '<p class="empty">La curva compare dopo almeno due giocate chiuse.</p>';
       hint.textContent = '';
-      document.getElementById('chartInfo').textContent = '';
+      info.textContent = '';
       return;
     }
     var cum = 0, pts = st.map(function (b) { cum += betProfit(b); return cum; });
-    var W = 640, H = 200, padL = 10, padR = 64, padT = 16, padB = 16;
+    var W = 680, H = 260, padL = 72, padR = 18, padT = 34, padB = 14;
     var min = Math.min(0, Math.min.apply(null, pts));
     var max = Math.max(0, Math.max.apply(null, pts));
     if (max - min < 1) { max += 1; min -= 1; }
+    var rawStep = (max - min) / 4;
+    var mag = Math.pow(10, Math.floor(Math.log(rawStep) / Math.LN10));
+    var mult = [1, 2, 5, 10].filter(function (m) { return m * mag >= rawStep; })[0] || 10;
+    var step = mult * mag;
+    min = Math.floor(min / step) * step;
+    max = Math.ceil(max / step) * step;
+    var eurC = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 0 });
     function x(i) { return padL + i * (W - padL - padR) / (pts.length - 1); }
     function y(v) { return padT + (max - v) / (max - min) * (H - padT - padB); }
-    var line = pts.map(function (v, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); }).join(' ');
-    var area = line + ' L' + x(pts.length - 1).toFixed(1) + ' ' + y(0).toFixed(1) +
-      ' L' + x(0).toFixed(1) + ' ' + y(0).toFixed(1) + ' Z';
-    var last = pts[pts.length - 1];
-    var endCol = last >= 0 ? 'var(--win)' : 'var(--loss)';
     var grid = '';
-    for (var i = 1; i <= 3; i++) {
-      var gy = padT + i * (H - padT - padB) / 4;
-      grid += '<line x1="' + padL + '" y1="' + gy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + gy.toFixed(1) + '" stroke="var(--line-soft)" stroke-width="1"/>';
+    for (var ti = 0; min + ti * step <= max + step / 2; ti++) {
+      var tv = min + ti * step;
+      var gy = y(tv);
+      var isZero = Math.abs(tv) < step / 2 && min < 0;
+      grid += '<line x1="' + padL + '" y1="' + gy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + gy.toFixed(1) + '" stroke="' + (isZero ? 'var(--line)' : 'var(--line-soft)') + '"' + (isZero ? ' stroke-dasharray="3 4"' : '') + ' stroke-width="1"/>' +
+        '<text x="' + (padL - 8) + '" y="' + (gy + 3.5).toFixed(1) + '" text-anchor="end" fill="var(--muted)" font-size="10" font-family="ui-monospace, Menlo, monospace">' + eurC.format(tv) + ' €</text>';
     }
-    var dots = '';
+    var line = pts.map(function (v, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); }).join(' ');
+    var area = line + ' L' + x(pts.length - 1).toFixed(1) + ' ' + (H - padB) + ' L' + x(0).toFixed(1) + ' ' + (H - padB) + ' Z';
+    var pills = '';
+    function pill(i) {
+      var t = eurC.format(pts[i]);
+      var wP = t.length * 6.6 + 14;
+      var px = Math.min(Math.max(x(i) - wP / 2, padL + 2), W - padR - wP - 2);
+      var py = y(pts[i]) - 25;
+      if (py < 4) py = y(pts[i]) + 10;
+      pills += '<rect x="' + px.toFixed(1) + '" y="' + py.toFixed(1) + '" width="' + wP.toFixed(1) + '" height="17" rx="4" fill="#F2F5F4"/>' +
+        '<text x="' + (px + wP / 2).toFixed(1) + '" y="' + (py + 12.5).toFixed(1) + '" text-anchor="middle" fill="#10181B" font-size="10.5" font-weight="700" font-family="ui-monospace, Menlo, monospace">' + t + '</text>';
+    }
+    var lblStep = Math.max(1, Math.ceil(pts.length / 8));
+    for (var li = 0; li < pts.length - 1 - lblStep / 2; li += lblStep) pill(li);
+    pill(pts.length - 1);
+    var hits = '';
     for (var j = 0; j < pts.length; j++) {
-      var selPt = j === chartSel;
-      dots += '<circle cx="' + x(j).toFixed(1) + '" cy="' + y(pts[j]).toFixed(1) + '" r="' + (selPt ? 4.5 : 2.5) + '" fill="' + (selPt ? 'var(--text)' : 'var(--gold)') + '"/>' +
-        '<circle class="pt-hit" data-i="' + j + '" cx="' + x(j).toFixed(1) + '" cy="' + y(pts[j]).toFixed(1) + '" r="10" fill="transparent"/>';
+      hits += '<circle class="pt-hit" data-i="' + j + '" cx="' + x(j).toFixed(1) + '" cy="' + y(pts[j]).toFixed(1) + '" r="10" fill="transparent"/>';
     }
+    var sel = '', tip = '';
+    if (chartSel !== null && st[chartSel]) {
+      var sx = x(chartSel), sy = y(pts[chartSel]);
+      sel = '<circle cx="' + sx.toFixed(1) + '" cy="' + sy.toFixed(1) + '" r="4.5" fill="var(--win)" stroke="#F2F5F4" stroke-width="1.5"/>';
+      var d = st[chartSel].date.split('-');
+      var l1 = d[2] + '/' + d[1] + '/' + d[0];
+      var l2 = 'Cumulato: ' + money(pts[chartSel]);
+      var wT = Math.max(l1.length, l2.length) * 6.6 + 20;
+      var tx = Math.min(Math.max(sx + 12, padL), W - padR - wT);
+      var ty = sy - 52;
+      if (ty < 4) ty = sy + 14;
+      tip = '<rect x="' + tx.toFixed(1) + '" y="' + ty.toFixed(1) + '" width="' + wT.toFixed(1) + '" height="40" rx="5" fill="#0A0F12" stroke="var(--line)" opacity="0.96"/>' +
+        '<text x="' + (tx + 10).toFixed(1) + '" y="' + (ty + 16).toFixed(1) + '" fill="var(--text)" font-size="11" font-weight="600" font-family="ui-monospace, Menlo, monospace">' + l1 + '</text>' +
+        '<text x="' + (tx + 10).toFixed(1) + '" y="' + (ty + 31).toFixed(1) + '" fill="var(--win)" font-size="11" font-family="ui-monospace, Menlo, monospace">' + l2 + '</text>';
+    }
+    var last = pts[pts.length - 1];
     box.innerHTML =
       '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Curva del profitto cumulato">' +
+      '<defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="var(--win)" stop-opacity="0.32"/>' +
+      '<stop offset="1" stop-color="var(--win)" stop-opacity="0.02"/>' +
+      '</linearGradient></defs>' +
       grid +
-      '<line x1="' + padL + '" y1="' + y(0).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y(0).toFixed(1) + '" stroke="var(--line)" stroke-dasharray="3 4" stroke-width="1"/>' +
-      '<path d="' + area + '" fill="var(--gold-soft)" stroke="none"/>' +
-      '<path d="' + line + '" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>' +
-      '<circle cx="' + x(pts.length - 1).toFixed(1) + '" cy="' + y(last).toFixed(1) + '" r="3.5" fill="' + endCol + '"/>' +
-      '<text x="' + (W - padR + 8) + '" y="' + (y(last) + 4).toFixed(1) + '" fill="' + endCol + '" font-size="12" font-family="ui-monospace, Menlo, monospace">' + money(last) + '</text>' +
-      dots +
+      '<path d="' + area + '" fill="url(#pg)" stroke="none"/>' +
+      '<path d="' + line + '" fill="none" stroke="var(--win)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>' +
+      '<circle cx="' + x(pts.length - 1).toFixed(1) + '" cy="' + y(last).toFixed(1) + '" r="3.5" fill="var(--win)"/>' +
+      pills + sel + tip + hits +
       '</svg>';
     hint.textContent = st[0].date + ' → ' + st[st.length - 1].date;
-    var info = document.getElementById('chartInfo');
     if (chartSel !== null && st[chartSel]) {
       var sb = st[chartSel], sp = betProfit(sb);
       info.innerHTML = esc(sb.date) + ' · ' + esc(sb.desc) + ' · <span class="' + signCls(sp) + '">' + money(sp) + '</span>' +
