@@ -221,6 +221,7 @@
 
   /* ── Chart ──────────────────────────── */
   .chart svg { display: block; width: 100%; height: auto; }
+  .pt-hit { cursor: pointer; }
 
   /* ── Footer ─────────────────────────── */
   .foot {
@@ -263,6 +264,7 @@
         <span class="hint" id="chartHint"></span>
       </div>
       <div class="chart" id="chart"></div>
+      <p class="hint" id="chartInfo"></p>
     </div>
     <div class="cols">
       <div class="card"><h2>Per casa</h2><div class="tbl-wrap" id="byBook"></div></div>
@@ -286,8 +288,8 @@
           <option value="Altro">Altro</option>
         </select></label>
         <label class="fld">Tipo<select id="betType"></select></label>
-        <label class="fld">Categoria<input id="betCat" list="catList" placeholder="es. Serie A over"></label>
-        <datalist id="catList"></datalist>
+        <label class="fld">Categoria<select id="betCat"></select></label>
+        <label class="fld" id="betCatNewWrap" hidden>Nuova categoria<input id="betCatNew" placeholder="es. Serie A over"></label>
         <label class="fld full">Descrizione<input id="betDesc" placeholder="es. Milan–Inter, over 2.5" required></label>
         <label class="fld">Quota<input type="number" id="betOdds" step="0.01" min="1.01" placeholder="1.95" required></label>
         <label class="fld">Stake €<input type="number" id="betStake" step="0.01" min="0.01" placeholder="10" required></label>
@@ -370,12 +372,13 @@
   var db = null;
   function openDB() {
     return new Promise(function (res, rej) {
-      var r = indexedDB.open('battibanco', 1);
+      var r = indexedDB.open('battibanco', 2);
       r.onupgradeneeded = function (e) {
         var d = e.target.result;
         if (!d.objectStoreNames.contains('books')) d.createObjectStore('books', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('bets')) d.createObjectStore('bets', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('txns')) d.createObjectStore('txns', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('cats')) d.createObjectStore('cats', { keyPath: 'name' });
       };
       r.onsuccess = function () { res(r.result); };
       r.onerror = function () { rej(r.error); };
@@ -412,11 +415,19 @@
   }
 
   /* ── State ──────────────────────────── */
-  var S = { books: [], bets: [], txns: [] };
+  var S = { books: [], bets: [], txns: [], cats: [] };
+  var chartSel = null;
   function reload() {
-    return Promise.all([getAll('books'), getAll('bets'), getAll('txns')]).then(function (r) {
+    return Promise.all([getAll('books'), getAll('bets'), getAll('txns'), getAll('cats')]).then(function (r) {
       S.books = r[0]; S.bets = r[1]; S.txns = r[2];
+      var names = {};
+      r[3].forEach(function (c) { names[c.name] = true; });
+      S.bets.forEach(function (b) {
+        if (b.category && !names[b.category]) { names[b.category] = true; put('cats', { name: b.category }); }
+      });
+      S.cats = Object.keys(names).sort();
       S.books.sort(function (a, b) { return a.name.localeCompare(b.name); });
+      chartSel = null;
       renderAll();
     });
   }
@@ -521,6 +532,7 @@
     if (st.length < 2) {
       box.innerHTML = '<p class="empty">La curva compare dopo almeno due giocate chiuse.</p>';
       hint.textContent = '';
+      document.getElementById('chartInfo').textContent = '';
       return;
     }
     var cum = 0, pts = st.map(function (b) { cum += betProfit(b); return cum; });
@@ -540,6 +552,12 @@
       var gy = padT + i * (H - padT - padB) / 4;
       grid += '<line x1="' + padL + '" y1="' + gy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + gy.toFixed(1) + '" stroke="var(--line-soft)" stroke-width="1"/>';
     }
+    var dots = '';
+    for (var j = 0; j < pts.length; j++) {
+      var selPt = j === chartSel;
+      dots += '<circle cx="' + x(j).toFixed(1) + '" cy="' + y(pts[j]).toFixed(1) + '" r="' + (selPt ? 4.5 : 2.5) + '" fill="' + (selPt ? 'var(--text)' : 'var(--gold)') + '"/>' +
+        '<circle class="pt-hit" data-i="' + j + '" cx="' + x(j).toFixed(1) + '" cy="' + y(pts[j]).toFixed(1) + '" r="10" fill="transparent"/>';
+    }
     box.innerHTML =
       '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Curva del profitto cumulato">' +
       grid +
@@ -548,8 +566,17 @@
       '<path d="' + line + '" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>' +
       '<circle cx="' + x(pts.length - 1).toFixed(1) + '" cy="' + y(last).toFixed(1) + '" r="3.5" fill="' + endCol + '"/>' +
       '<text x="' + (W - padR + 8) + '" y="' + (y(last) + 4).toFixed(1) + '" fill="' + endCol + '" font-size="12" font-family="ui-monospace, Menlo, monospace">' + money(last) + '</text>' +
+      dots +
       '</svg>';
     hint.textContent = st[0].date + ' → ' + st[st.length - 1].date;
+    var info = document.getElementById('chartInfo');
+    if (chartSel !== null && st[chartSel]) {
+      var sb = st[chartSel], sp = betProfit(sb);
+      info.innerHTML = esc(sb.date) + ' · ' + esc(sb.desc) + ' · <span class="' + signCls(sp) + '">' + money(sp) + '</span>' +
+        ' · cumulato <span class="' + signCls(pts[chartSel]) + '">' + money(pts[chartSel]) + '</span>';
+    } else {
+      info.textContent = 'Tocca un punto della curva per vedere la giocata.';
+    }
   }
 
   function statsTable(rows, firstCol) {
@@ -600,8 +627,12 @@
     sel.innerHTML = S.books.length
       ? S.books.map(function (b) { return '<option value="' + b.id + '">' + esc(b.name) + '</option>'; }).join('')
       : '<option value="">Prima aggiungi una casa</option>';
-    document.getElementById('catList').innerHTML =
-      categories().map(function (c) { return '<option value="' + esc(c) + '"></option>'; }).join('');
+    var catSel = document.getElementById('betCat');
+    var prevCat = catSel.value;
+    catSel.innerHTML = '<option value="">Nessuna</option>' +
+      S.cats.map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('') +
+      '<option value="__new__">+ Nuova categoria…</option>';
+    if (prevCat && (prevCat === '__new__' || S.cats.indexOf(prevCat) !== -1)) catSel.value = prevCat;
   }
 
   var SPORT_TYPES = {
@@ -816,22 +847,42 @@
       bookId: document.getElementById('betBook').value,
       sport: document.getElementById('betSport').value,
       betType: document.getElementById('betType').value,
-      category: document.getElementById('betCat').value.trim(),
+      category: (document.getElementById('betCat').value === '__new__'
+        ? document.getElementById('betCatNew').value.trim()
+        : document.getElementById('betCat').value),
       desc: document.getElementById('betDesc').value.trim(),
       odds: parseFloat(document.getElementById('betOdds').value),
       stake: parseFloat(document.getElementById('betStake').value),
       closingOdds: closing > 1 ? closing : null,
       status: 'pending'
     };
-    put('bets', bet).then(function () {
-      ['betDesc', 'betOdds', 'betStake', 'betClosing'].forEach(function (id) {
+    var saveCat = (bet.category && S.cats.indexOf(bet.category) === -1)
+      ? put('cats', { name: bet.category }) : Promise.resolve();
+    Promise.all([put('bets', bet), saveCat]).then(function () {
+      ['betDesc', 'betOdds', 'betStake', 'betClosing', 'betCatNew'].forEach(function (id) {
         document.getElementById(id).value = '';
       });
-      reload();
+      document.getElementById('betCatNewWrap').hidden = true;
+      return reload();
+    }).then(function () {
+      document.getElementById('betCat').value = bet.category || '';
     });
   });
 
   document.getElementById('betSport').addEventListener('change', fillTypes);
+
+  document.getElementById('betCat').addEventListener('change', function () {
+    var isNew = this.value === '__new__';
+    document.getElementById('betCatNewWrap').hidden = !isNew;
+    if (isNew) document.getElementById('betCatNew').focus();
+  });
+
+  document.getElementById('chart').addEventListener('click', function (e) {
+    var t = e.target.closest('[data-i]');
+    if (!t) return;
+    chartSel = +t.dataset.i;
+    renderChart();
+  });
 
   document.getElementById('betFilter').addEventListener('change', renderBets);
 
@@ -912,7 +963,7 @@
   }
   document.getElementById('expJson').addEventListener('click', function () {
     download('battibanco-' + new Date().toISOString().slice(0, 10) + '.json', 'application/json',
-      JSON.stringify({ exportedAt: new Date().toISOString(), books: S.books, bets: S.bets, txns: S.txns }, null, 2));
+      JSON.stringify({ exportedAt: new Date().toISOString(), books: S.books, bets: S.bets, txns: S.txns, cats: S.cats }, null, 2));
   });
   document.getElementById('expCsv').addEventListener('click', function () {
     var rows = [['data', 'casa', 'sport', 'tipo', 'categoria', 'descrizione', 'quota', 'stake', 'esito', 'closing_odds', 'clv', 'profitto']];
@@ -940,11 +991,12 @@
       var data = JSON.parse(txt);
       if (!data || !Array.isArray(data.books) || !Array.isArray(data.bets)) throw new Error('formato');
       if (!confirm('Importare il backup? I dati attuali verranno sostituiti.')) return;
-      return Promise.all([clearStore('books'), clearStore('bets'), clearStore('txns')]).then(function () {
+      return Promise.all([clearStore('books'), clearStore('bets'), clearStore('txns'), clearStore('cats')]).then(function () {
         return Promise.all(
           data.books.map(function (b) { return put('books', b); })
             .concat(data.bets.map(function (b) { return put('bets', b); }))
             .concat((data.txns || []).map(function (t) { return put('txns', t); }))
+            .concat((data.cats || []).map(function (n) { return put('cats', { name: n }); }))
         );
       }).then(reload);
     }).catch(function () {
