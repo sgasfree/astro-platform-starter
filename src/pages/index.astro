@@ -537,7 +537,7 @@
       return;
     }
     var cum = 0, pts = st.map(function (b) { cum += betProfit(b); return cum; });
-    var W = 680, H = 260, padL = 72, padR = 18, padT = 34, padB = 14;
+    var W = 680, H = 285, padL = 72, padR = 18, padT = 34, padB = 42;
     var min = Math.min(0, Math.min.apply(null, pts));
     var max = Math.max(0, Math.max.apply(null, pts));
     if (max - min < 1) { max += 1; min -= 1; }
@@ -577,6 +577,28 @@
     for (var j = 0; j < pts.length; j++) {
       hits += '<circle class="pt-hit" data-i="' + j + '" cx="' + x(j).toFixed(1) + '" cy="' + y(pts[j]).toFixed(1) + '" r="10" fill="transparent"/>';
     }
+    var months = [];
+    st.forEach(function (b, i) {
+      var k = b.date.slice(0, 7);
+      if (!months.length || months[months.length - 1].key !== k) months.push({ key: k, start: i, end: i, profit: 0 });
+      var m = months[months.length - 1];
+      m.profit += betProfit(b);
+      m.end = i;
+    });
+    var multiYear = months.length > 1 && months[0].key.slice(0, 4) !== months[months.length - 1].key.slice(0, 4);
+    var mFmt = new Intl.DateTimeFormat('it-IT', { month: 'short' });
+    var monthsSvg = '';
+    months.forEach(function (m, mi) {
+      var x0 = x(m.start), x1 = x(m.end);
+      if (mi > 0) monthsSvg += '<line x1="' + x0.toFixed(1) + '" y1="' + padT + '" x2="' + x0.toFixed(1) + '" y2="' + (H - padB) + '" stroke="var(--line-soft)" stroke-dasharray="2 4" stroke-width="1"/>';
+      var cxm = (x0 + x1) / 2, wSeg = x1 - x0;
+      if (wSeg < 24 && months.length > 1) return;
+      var name = mFmt.format(new Date(m.key + '-15')) + (multiYear ? ' ' + m.key.slice(2, 4) : '');
+      monthsSvg += '<text x="' + cxm.toFixed(1) + '" y="' + (H - padB + 16) + '" text-anchor="middle" fill="var(--muted)" font-size="10" font-family="ui-monospace, Menlo, monospace">' + name + '</text>';
+      if (wSeg >= 46 || months.length === 1) {
+        monthsSvg += '<text x="' + cxm.toFixed(1) + '" y="' + (H - padB + 30) + '" text-anchor="middle" fill="' + (m.profit >= 0 ? 'var(--win)' : 'var(--loss)') + '" font-size="10" font-weight="600" font-family="ui-monospace, Menlo, monospace">' + (m.profit >= 0 ? '+' : '\u2212') + eurC.format(Math.abs(m.profit)) + ' €</text>';
+      }
+    });
     var sel = '', tip = '';
     if (chartSel !== null && st[chartSel]) {
       var sx = x(chartSel), sy = y(pts[chartSel]);
@@ -599,7 +621,7 @@
       '<stop offset="0" stop-color="var(--win)" stop-opacity="0.32"/>' +
       '<stop offset="1" stop-color="var(--win)" stop-opacity="0.02"/>' +
       '</linearGradient></defs>' +
-      grid +
+      grid + monthsSvg +
       '<path d="' + area + '" fill="url(#pg)" stroke="none"/>' +
       '<path d="' + line + '" fill="none" stroke="var(--win)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>' +
       '<circle cx="' + x(pts.length - 1).toFixed(1) + '" cy="' + y(last).toFixed(1) + '" r="3.5" fill="var(--win)"/>' +
