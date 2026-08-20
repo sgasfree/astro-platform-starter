@@ -304,6 +304,7 @@
           <option value="all">Tutte</option>
           <option value="pending">In corso</option>
           <option value="settled">Chiuse</option>
+          <option value="won">Vinti</option>
         </select>
       </div>
       <div id="betList"></div>
@@ -720,6 +721,7 @@
     }).filter(function (b) {
       if (filter === 'pending') return b.status === 'pending';
       if (filter === 'settled') return b.status !== 'pending';
+      if (filter === 'won') return b.status === 'won';
       return true;
     });
     var box = document.getElementById('betList');
