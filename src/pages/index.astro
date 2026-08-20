@@ -190,6 +190,8 @@
   .chip-lost { background: var(--loss-soft); color: var(--loss); }
   .chip-void { background: var(--panel-2); color: var(--muted); }
   .chip-cat  { background: var(--gold-soft); color: var(--gold); text-transform: none; letter-spacing: 0; }
+  .chip-soft { background: var(--gold-soft); color: var(--gold); }
+  td .chip { white-space: nowrap; }
   .co-input { width: 74px; padding: 4px 6px; font-size: 0.8rem; }
 
   /* ── Books ──────────────────────────── */
@@ -342,15 +344,13 @@
         <p class="note">Inserisci probabilità e quota: il calcolatore mostra se c&rsquo;è value e quanto puntare.</p>
       </div>
     </div>
-    <div class="cols">
-      <div class="card">
-        <h2>Closing Line Value</h2>
-        <div id="clvBox"></div>
-      </div>
-      <div class="card">
-        <h2>Edge per categoria</h2>
-        <div class="tbl-wrap" id="edgeBox"></div>
-      </div>
+    <div class="card">
+      <h2>Closing Line Value</h2>
+      <div id="clvBox"></div>
+    </div>
+    <div class="card">
+      <h2>Edge per categoria</h2>
+      <div class="tbl-wrap" id="edgeBox"></div>
     </div>
   </section>
 
@@ -852,23 +852,34 @@
       box.innerHTML = '<p class="note">Assegna una categoria alle giocate per scoprire dove il tuo vantaggio c&rsquo;è davvero — e dove no.</p>';
       return;
     }
-    var h = '<table><thead><tr><th>Categoria</th><th class="num">Chiuse</th><th class="num">Yield</th><th class="num">CLV</th><th>Verdetto</th></tr></thead><tbody>';
+    var MIN_PARZIALE = 30, MIN_SOLIDO = 100;
+    var h = '<table><thead><tr><th>Categoria</th><th class="num">Chiuse</th><th class="num">Yield</th><th class="num">CLV</th><th>Campione</th><th>Verdetto</th></tr></thead><tbody>';
     cats.forEach(function (c) {
       var g = groupStats(S.bets.filter(function (b) { return b.category === c; }));
-      var verdict;
-      if (g.clvAvg !== null && g.clvAvg > 0 && (g.yield === null || g.yield >= 0)) {
-        verdict = '<span class="chip chip-won">edge</span>';
-      } else if (g.clvAvg !== null && g.clvAvg <= 0) {
-        verdict = '<span class="chip chip-lost">no edge</span>';
+      var sample, verdict;
+      if (g.clvN === 0) {
+        sample = '<span class="chip chip-pending">senza CLV</span>';
+        verdict = '<span class="chip chip-pending">serve la closing</span>';
+      } else if (g.clvN < MIN_PARZIALE) {
+        sample = '<span class="chip chip-pending">scarso ' + g.clvN + '/' + MIN_PARZIALE + '</span>';
+        verdict = '<span class="chip chip-pending">presto per dire</span>';
+      } else if (g.clvN < MIN_SOLIDO) {
+        sample = '<span class="chip chip-soft">parziale ' + g.clvN + '/' + MIN_SOLIDO + '</span>';
+        verdict = '<span class="chip chip-soft">' + (g.clvAvg > 0 ? 'edge probabile' : 'no edge probabile') + '</span>';
       } else {
-        verdict = '<span class="chip chip-pending">dati scarsi</span>';
+        sample = '<span class="chip chip-won">solido ' + g.clvN + '</span>';
+        verdict = g.clvAvg > 0
+          ? '<span class="chip chip-won">edge</span>'
+          : '<span class="chip chip-lost">no edge</span>';
       }
       h += '<tr><td>' + esc(c) + '</td><td class="num">' + g.n + '</td>' +
         '<td class="num ' + (g.yield === null ? '' : signCls(g.yield)) + '">' + (g.yield === null ? '—' : pct(g.yield)) + '</td>' +
         '<td class="num ' + (g.clvAvg === null ? '' : signCls(g.clvAvg)) + '">' + (g.clvAvg === null ? '—' : pct(g.clvAvg)) + '</td>' +
-        '<td>' + verdict + '</td></tr>';
+        '<td>' + sample + '</td><td>' + verdict + '</td></tr>';
     });
-    box.innerHTML = h + '</tbody></table>';
+    box.innerHTML = h + '</tbody></table>' +
+      '<p class="note" style="margin-top:10px">Il campione conta le giocate <strong>con closing odds</strong>: sotto ' + MIN_PARZIALE +
+      ' il CLV è ancora rumore, da ' + MIN_SOLIDO + ' in su il verdetto regge. Lo yield da solo richiede molte più giocate ancora.</p>';
   }
 
   function renderAll() {
