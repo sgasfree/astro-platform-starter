@@ -17,6 +17,18 @@ All commands are run from the root of the project, from a terminal:
 | `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
 | `npm run astro -- --help` | Get help using the Astro CLI                     |
 
+## Quote automatiche (Batti il Banco)
+
+Il pulsante ⟳ accanto alla closing odds di una giocata recupera le quote correnti da [The Odds API](https://the-odds-api.com) tramite l'endpoint `/api/odds`. Per attivarlo:
+
+1. Registrati su The Odds API e copia la tua chiave.
+2. Su Netlify: **Site configuration → Environment variables → Add a variable**
+    - `ODDS_API_KEY` = la chiave (obbligatoria)
+    - `ODDS_BOOKMAKER` = book di riferimento per il confronto, `pinnacle` se non impostata (facoltativa)
+3. Rideploya il sito.
+
+Senza la variabile l'app resta pienamente funzionante e il pulsante spiega che la funzione non è configurata. Le risposte sono messe in cache per due minuti (elenco campionati: sei ore) per non consumare la quota mensile a ogni apertura.
+
 ## Deploying to Netlify
 
 [![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/netlify-templates/astro-platform-starter)
