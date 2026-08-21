@@ -24,10 +24,14 @@ Il pulsante ⟳ accanto alla closing odds di una giocata recupera le quote corre
 1. Registrati su The Odds API e copia la tua chiave.
 2. Su Netlify: **Site configuration → Environment variables → Add a variable**
     - `ODDS_API_KEY` = la chiave (obbligatoria)
-    - `ODDS_BOOKMAKER` = book di riferimento per il confronto, `pinnacle` se non impostata (facoltativa)
+    - `ODDS_BOOKMAKER` = book di riferimento iniziale, `pinnacle` se non impostata (facoltativa)
 3. Rideploya il sito.
 
-Senza la variabile l'app resta pienamente funzionante e il pulsante spiega che la funzione non è configurata. Le risposte sono messe in cache per due minuti (elenco campionati: sei ore) per non consumare la quota mensile a ogni apertura.
+Senza `ODDS_API_KEY` l'app resta pienamente funzionante e il pulsante spiega che la funzione non è configurata.
+
+Il bookmaker di riferimento si sceglie anche dal menu dentro la finestra delle quote, che elenca i book realmente disponibili per quel campionato e ricorda la scelta sul dispositivo: `ODDS_BOOKMAKER` serve solo a fissare il valore di partenza.
+
+Ogni campionato richiede una sola chiamata all'API, che scarica tutti i bookmaker della regione (il costo in crediti non dipende dal loro numero): cambiare book di riferimento non consuma crediti aggiuntivi. Le risposte restano in cache per due minuti, l'elenco dei campionati per sei ore.
 
 ## Deploying to Netlify
 

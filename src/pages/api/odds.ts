@@ -93,21 +93,29 @@ export const GET: APIRoute = async ({ url }) => {
             return json({ sports, remaining });
         }
 
-        // Quote correnti di una lega, dal solo bookmaker di riferimento.
+        // Quote correnti di una lega. La chiamata scarica tutti i bookmaker della regione
+        // (il costo in crediti non dipende dal loro numero) e la risposta viene messa in
+        // cache una volta sola: cambiare bookmaker di riferimento non consuma altri crediti.
         const sport = slug(url.searchParams.get('sport'));
         if (!sport) return json({ error: 'Campionato non indicato.' }, 400);
-        const book = slug(url.searchParams.get('book'), process.env.ODDS_BOOKMAKER || DEFAULT_BOOK);
 
-        const { data, remaining } = await cached(`odds:${sport}:${book}`, CACHE_ODDS_MS, () =>
-            upstream(`/sports/${sport}/odds?regions=eu&markets=h2h,totals&oddsFormat=decimal&bookmakers=${book}`)
+        const { data, remaining } = await cached(`odds:${sport}`, CACHE_ODDS_MS, () =>
+            upstream(`/sports/${sport}/odds?regions=eu&markets=h2h,totals&oddsFormat=decimal`)
         );
+
+        const titles = new Map<string, string>();
+        for (const ev of data as any[]) for (const b of ev.bookmakers ?? []) titles.set(b.key, b.title || b.key);
+        const books = [...titles].map(([key, title]) => ({ key, title })).sort((a, b) => a.title.localeCompare(b.title));
+
+        const wanted = slug(url.searchParams.get('book')) || process.env.ODDS_BOOKMAKER || DEFAULT_BOOK;
+        const book = titles.has(wanted) ? wanted : titles.has(DEFAULT_BOOK) ? DEFAULT_BOOK : (books[0]?.key ?? wanted);
 
         const events = (data as any[]).map((ev) => ({
             id: ev.id,
             start: ev.commence_time,
             home: ev.home_team,
             away: ev.away_team,
-            outcomes: (ev.bookmakers?.[0]?.markets ?? []).flatMap((m: any) =>
+            outcomes: ((ev.bookmakers ?? []).find((b: any) => b.key === book)?.markets ?? []).flatMap((m: any) =>
                 (m.outcomes ?? []).map((o: any) => ({
                     market: m.key,
                     label: o.name,
@@ -117,7 +125,7 @@ export const GET: APIRoute = async ({ url }) => {
             )
         }));
 
-        return json({ events, book, remaining });
+        return json({ events, book, books, remaining });
     } catch (err: any) {
         console.error('odds:', err);
         return json({ error: err?.message || 'Impossibile contattare il servizio quote.' }, err?.status || 502);
