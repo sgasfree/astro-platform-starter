@@ -280,7 +280,7 @@
     <div class="card">
       <h2>Nuova giocata</h2>
       <form id="betForm" class="frm">
-        <label class="fld">Data<input type="date" id="betDate" required></label>
+        <label class="fld">Data e ora<input type="datetime-local" id="betDate" required></label>
         <label class="fld">Casa<select id="betBook" required></select></label>
         <label class="fld">Sport<select id="betSport">
           <option value="Calcio">Calcio</option>
@@ -455,6 +455,14 @@
   }
 
   /* ── Math ───────────────────────────── */
+  function betKey(b) { return b.date + ' ' + (b.time || ''); }
+  function localNow() {
+    var d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  }
+  function whenLabel(b) { return b.date + (b.time ? ' ' + b.time : ''); }
+
   function betProfit(b) {
     if (b.status === 'won') return b.stake * (b.odds - 1);
     if (b.status === 'lost') return -b.stake;
@@ -529,7 +537,8 @@
     var hint = document.getElementById('chartHint');
     var info = document.getElementById('chartInfo');
     var st = settled().slice().sort(function (a, b) {
-      return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.ts || 0) - (b.ts || 0);
+      var ka = betKey(a), kb = betKey(b);
+      return ka < kb ? -1 : ka > kb ? 1 : (a.ts || 0) - (b.ts || 0);
     });
     if (st.length < 2) {
       box.innerHTML = '<p class="empty">La curva compare dopo almeno due giocate chiuse.</p>';
@@ -605,7 +614,7 @@
       var sx = x(chartSel), sy = y(pts[chartSel]);
       sel = '<circle cx="' + sx.toFixed(1) + '" cy="' + sy.toFixed(1) + '" r="4.5" fill="var(--win)" stroke="#F2F5F4" stroke-width="1.5"/>';
       var d = st[chartSel].date.split('-');
-      var l1 = d[2] + '/' + d[1] + '/' + d[0];
+      var l1 = d[2] + '/' + d[1] + '/' + d[0] + (st[chartSel].time ? ' ' + st[chartSel].time : '');
       var l2 = 'Cumulato: ' + money(pts[chartSel]);
       var wT = Math.max(l1.length, l2.length) * 6.6 + 20;
       var tx = Math.min(Math.max(sx + 12, padL), W - padR - wT);
@@ -631,7 +640,7 @@
     hint.textContent = st[0].date + ' → ' + st[st.length - 1].date;
     if (chartSel !== null && st[chartSel]) {
       var sb = st[chartSel], sp = betProfit(sb);
-      info.innerHTML = esc(sb.date) + ' · ' + esc(sb.desc) + ' · <span class="' + signCls(sp) + '">' + money(sp) + '</span>' +
+      info.innerHTML = esc(whenLabel(sb)) + ' · ' + esc(sb.desc) + ' · <span class="' + signCls(sp) + '">' + money(sp) + '</span>' +
         ' · cumulato <span class="' + signCls(pts[chartSel]) + '">' + money(pts[chartSel]) + '</span>';
     } else {
       info.textContent = 'Tocca un punto della curva per vedere la giocata.';
@@ -717,7 +726,8 @@
   function renderBets() {
     var filter = document.getElementById('betFilter').value;
     var list = S.bets.slice().sort(function (a, b) {
-      return a.date < b.date ? 1 : a.date > b.date ? -1 : (b.ts || 0) - (a.ts || 0);
+      var ka = betKey(a), kb = betKey(b);
+      return ka < kb ? 1 : ka > kb ? -1 : (b.ts || 0) - (a.ts || 0);
     }).filter(function (b) {
       if (filter === 'pending') return b.status === 'pending';
       if (filter === 'settled') return b.status !== 'pending';
@@ -744,7 +754,7 @@
       actions += '<button class="btn btn-sm btn-ghost" data-act="del" data-id="' + b.id + '" aria-label="Elimina giocata">✕</button>';
       return '<div class="bet">' +
         '<div class="b-main"><div class="b-desc">' + esc(b.desc) + '</div>' +
-        '<div class="b-meta">' + esc(b.date) + ' · ' + esc(bookName(b.bookId)) + (b.sport ? ' · ' + esc(b.sport) : '') + ' · ' + esc(b.betType) +
+        '<div class="b-meta">' + esc(whenLabel(b)) + ' · ' + esc(bookName(b.bookId)) + (b.sport ? ' · ' + esc(b.sport) : '') + ' · ' + esc(b.betType) +
         (b.category ? ' · <span class="chip chip-cat">' + esc(b.category) + '</span>' : '') + '</div></div>' +
         '<div class="b-nums"><span title="Quota">@' + b.odds.toFixed(2) + '</span>' +
         '<span title="Stake">' + money(b.stake) + '</span>' +
@@ -914,7 +924,8 @@
     var closing = parseFloat(document.getElementById('betClosing').value);
     var bet = {
       id: uid(), ts: Date.now(),
-      date: document.getElementById('betDate').value,
+      date: document.getElementById('betDate').value.slice(0, 10),
+      time: document.getElementById('betDate').value.slice(11, 16),
       bookId: document.getElementById('betBook').value,
       sport: document.getElementById('betSport').value,
       betType: document.getElementById('betType').value,
@@ -1037,10 +1048,10 @@
       JSON.stringify({ exportedAt: new Date().toISOString(), books: S.books, bets: S.bets, txns: S.txns, cats: S.cats }, null, 2));
   });
   document.getElementById('expCsv').addEventListener('click', function () {
-    var rows = [['data', 'casa', 'sport', 'tipo', 'categoria', 'descrizione', 'quota', 'stake', 'esito', 'closing_odds', 'clv', 'profitto']];
-    S.bets.slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; }).forEach(function (b) {
+    var rows = [['data', 'ora', 'casa', 'sport', 'tipo', 'categoria', 'descrizione', 'quota', 'stake', 'esito', 'closing_odds', 'clv', 'profitto']];
+    S.bets.slice().sort(function (a, b) { return betKey(a) < betKey(b) ? -1 : 1; }).forEach(function (b) {
       var clv = clvOf(b);
-      rows.push([b.date, bookName(b.bookId), b.sport || '', b.betType, b.category || '', b.desc,
+      rows.push([b.date, b.time || '', bookName(b.bookId), b.sport || '', b.betType, b.category || '', b.desc,
         b.odds, b.stake, STATUS_LABEL[b.status], b.closingOdds || '',
         clv === null ? '' : (clv * 100).toFixed(2), betProfit(b).toFixed(2)]);
     });
@@ -1078,7 +1089,7 @@
   /* ── Init ───────────────────────────── */
   openDB().then(function (d) {
     db = d;
-    document.getElementById('betDate').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('betDate').value = localNow();
     fillTypes();
     showView(lsGet('bb-tab') || 'dash');
     return reload();
