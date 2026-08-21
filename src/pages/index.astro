@@ -221,6 +221,23 @@
   .note { font-size: 0.8rem; color: var(--muted); max-width: 62ch; }
   .warn { color: var(--gold); font-size: 0.8rem; }
 
+  /* ── Finestra quote ─────────────────── */
+  dialog {
+    background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 18px; max-width: 560px; width: calc(100% - 28px);
+    max-height: 82vh; position: relative;
+  }
+  dialog::backdrop { background: rgba(4, 8, 10, 0.66); }
+  dialog h2 { font-family: var(--serif); font-size: 1.05rem; margin: 0 0 4px; }
+  .dlg-x { position: absolute; top: 12px; right: 12px; }
+  .ev { border-bottom: 1px solid var(--line-soft); padding: 10px 0; }
+  .ev:last-child { border-bottom: none; }
+  .ev-head { font-size: 0.85rem; margin-bottom: 6px; }
+  .ev-head span { color: var(--muted); font-size: 0.78rem; }
+  .odds-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .odds-btn { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .odds-btn strong { color: var(--gold); }
+
   /* ── Chart ──────────────────────────── */
   .chart svg { display: block; width: 100%; height: auto; }
   .pt-hit { cursor: pointer; }
@@ -353,6 +370,16 @@
       <div class="tbl-wrap" id="edgeBox"></div>
     </div>
   </section>
+
+  <dialog id="oddsDlg">
+    <form method="dialog"><button class="btn btn-sm btn-ghost dlg-x" aria-label="Chiudi">&#10005;</button></form>
+    <h2>Quota di chiusura</h2>
+    <p class="hint" id="oddsSub"></p>
+    <p class="note" style="margin: 8px 0 12px">Da usare poco prima dell&rsquo;inizio dell&rsquo;evento: la quota che scegli viene salvata come closing odds della giocata.</p>
+    <label class="fld" style="margin-bottom: 12px">Campionato<select id="oddsLeague"></select></label>
+    <div id="oddsBody" style="overflow-y: auto; max-height: 44vh"></div>
+    <p class="hint" id="oddsFoot" style="margin-top: 10px"></p>
+  </dialog>
 
   <footer class="foot">
     <div class="actions">
@@ -765,6 +792,7 @@
         '<div class="b-act">' +
         '<input class="co-input" type="number" step="0.01" min="1.01" placeholder="closing" ' +
         'value="' + (b.closingOdds || '') + '" data-co="' + b.id + '" title="Closing odds">' +
+        '<button class="btn btn-sm btn-ghost" data-act="odds" data-id="' + b.id + '" title="Recupera la quota di chiusura">&#8635;</button>' +
         actions + '</div></div>';
     }).join('');
   }
@@ -974,6 +1002,7 @@
     var id = btn.dataset.id;
     var bet = S.bets.find(function (b) { return b.id === id; });
     if (!bet) return;
+    if (btn.dataset.act === 'odds') { openOdds(id); return; }
     if (btn.dataset.act === 'del') {
       if (!confirm('Eliminare questa giocata?')) return;
       del('bets', id).then(reload);
@@ -1033,6 +1062,93 @@
   /* ── Events: Kelly ──────────────────── */
   ['kProb', 'kOdds', 'kBank', 'kFrac'].forEach(function (id) {
     document.getElementById(id).addEventListener('input', renderKelly);
+  });
+
+  /* ── Quote automatiche ──────────────── */
+  var oddsBetId = null;
+  function oddsEl(id) { return document.getElementById(id); }
+
+  function oddsFetch(qs) {
+    return fetch('/api/odds?' + qs).then(function (r) {
+      return r.json().then(function (d) {
+        if (!r.ok || d.error) throw new Error(d.error || ('Errore ' + r.status));
+        return d;
+      }, function () {
+        throw new Error(r.status === 404
+          ? 'Le quote automatiche funzionano solo sul sito pubblicato, non su questa copia.'
+          : 'Risposta non valida dal servizio quote.');
+      });
+    });
+  }
+
+  function oddsMessage(msg) {
+    oddsEl('oddsBody').innerHTML = '<p class="note">' + esc(msg) + '</p>';
+  }
+
+  function openOdds(id) {
+    var bet = S.bets.find(function (b) { return b.id === id; });
+    if (!bet) return;
+    oddsBetId = id;
+    oddsEl('oddsSub').textContent = bet.desc + ' · quota presa ' + bet.odds.toFixed(2) +
+      (bet.closingOdds ? ' · closing attuale ' + bet.closingOdds.toFixed(2) : '');
+    oddsEl('oddsLeague').innerHTML = '';
+    oddsEl('oddsFoot').textContent = '';
+    oddsMessage('Carico i campionati…');
+    oddsEl('oddsDlg').showModal();
+    oddsFetch('list=1&group=' + encodeURIComponent(bet.sport || '')).then(function (d) {
+      var sports = d.sports || [];
+      if (!sports.length) {
+        oddsMessage('Nessun campionato disponibile per ' + (bet.sport || 'questo sport') + '.');
+        return;
+      }
+      oddsEl('oddsLeague').innerHTML = sports.map(function (sp) {
+        return '<option value="' + esc(sp.key) + '">' + esc(sp.title) + '</option>';
+      }).join('');
+      var saved = lsGet('bb-lega-' + (bet.sport || ''));
+      if (saved && sports.some(function (sp) { return sp.key === saved; })) oddsEl('oddsLeague').value = saved;
+      loadOdds();
+    }).catch(function (e) { oddsMessage(e.message); });
+  }
+
+  function loadOdds() {
+    var sportKey = oddsEl('oddsLeague').value;
+    var bet = S.bets.find(function (b) { return b.id === oddsBetId; });
+    if (!sportKey || !bet) return;
+    lsSet('bb-lega-' + (bet.sport || ''), sportKey);
+    oddsMessage('Carico le quote…');
+    oddsFetch('sport=' + encodeURIComponent(sportKey)).then(function (d) {
+      var evs = d.events || [];
+      if (!evs.length) { oddsMessage('Nessun evento con quote in questo campionato.'); return; }
+      oddsEl('oddsBody').innerHTML = evs.slice(0, 40).map(function (ev) {
+        var when = new Date(ev.start);
+        var lbl = isNaN(when) ? '' : when.toLocaleString('it-IT',
+          { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        var btns = ev.outcomes.map(function (o) {
+          var name = o.label + (o.point === null || o.point === undefined ? '' : ' ' + o.point);
+          return '<button class="btn btn-sm odds-btn" data-price="' + o.price + '">' +
+            esc(name) + ' <strong>' + Number(o.price).toFixed(2) + '</strong></button>';
+        }).join('');
+        return '<div class="ev"><div class="ev-head">' + esc(ev.home) + ' – ' + esc(ev.away) +
+          ' <span>' + esc(lbl) + '</span></div><div class="odds-row">' +
+          (btns || '<span class="hint">nessuna quota disponibile</span>') + '</div></div>';
+      }).join('');
+      oddsEl('oddsFoot').textContent = 'Quote di ' + (d.book || 'book di riferimento') +
+        (d.remaining ? ' · ' + d.remaining + ' richieste rimaste questo mese' : '');
+    }).catch(function (e) { oddsMessage(e.message); });
+  }
+
+  oddsEl('oddsLeague').addEventListener('change', loadOdds);
+
+  oddsEl('oddsBody').addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-price]');
+    if (!btn) return;
+    var bet = S.bets.find(function (b) { return b.id === oddsBetId; });
+    if (!bet) return;
+    bet.closingOdds = parseFloat(btn.dataset.price);
+    put('bets', bet).then(function () {
+      oddsEl('oddsDlg').close();
+      return reload();
+    });
   });
 
   /* ── Export / import ────────────────── */
