@@ -625,8 +625,16 @@
     var multiYear = months.length > 1 && months[0].key.slice(0, 4) !== months[months.length - 1].key.slice(0, 4);
     var mFmt = new Intl.DateTimeFormat('it-IT', { month: 'short' });
     var monthsSvg = '';
+    // Confine fra due mesi: a metà strada fra l'ultima giocata di uno e la prima del successivo,
+    // così anche un mese con una sola giocata ha spazio per la sua etichetta.
     months.forEach(function (m, mi) {
-      var x0 = x(m.start), x1 = x(m.end);
+      m.x0 = mi === 0 ? padL : (x(months[mi - 1].end) + x(m.start)) / 2;
+    });
+    months.forEach(function (m, mi) {
+      m.x1 = mi === months.length - 1 ? W - padR : months[mi + 1].x0;
+    });
+    months.forEach(function (m, mi) {
+      var x0 = m.x0, x1 = m.x1;
       if (mi > 0) monthsSvg += '<line x1="' + x0.toFixed(1) + '" y1="' + padT + '" x2="' + x0.toFixed(1) + '" y2="' + (H - padB) + '" stroke="var(--line-soft)" stroke-dasharray="2 4" stroke-width="1"/>';
       var cxm = (x0 + x1) / 2, wSeg = x1 - x0;
       if (wSeg < 24 && months.length > 1) return;
