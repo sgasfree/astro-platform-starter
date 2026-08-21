@@ -376,7 +376,10 @@
     <h2>Quota di chiusura</h2>
     <p class="hint" id="oddsSub"></p>
     <p class="note" style="margin: 8px 0 12px">Da usare poco prima dell&rsquo;inizio dell&rsquo;evento: la quota che scegli viene salvata come closing odds della giocata.</p>
-    <label class="fld" style="margin-bottom: 12px">Campionato<select id="oddsLeague"></select></label>
+    <div class="frm" style="margin-bottom: 12px">
+      <label class="fld">Campionato<select id="oddsLeague"></select></label>
+      <label class="fld" id="oddsBookWrap" hidden>Bookmaker di riferimento<select id="oddsBook"></select></label>
+    </div>
     <div id="oddsBody" style="overflow-y: auto; max-height: 44vh"></div>
     <p class="hint" id="oddsFoot" style="margin-top: 10px"></p>
   </dialog>
@@ -1124,7 +1127,14 @@
     if (!sportKey || !bet) return;
     lsSet('bb-lega-' + (bet.sport || ''), sportKey);
     oddsMessage('Carico le quote…');
-    oddsFetch('sport=' + encodeURIComponent(sportKey)).then(function (d) {
+    var pref = lsGet('bb-book') || '';
+    oddsFetch('sport=' + encodeURIComponent(sportKey) + (pref ? '&book=' + encodeURIComponent(pref) : '')).then(function (d) {
+      var books = d.books || [];
+      oddsEl('oddsBookWrap').hidden = books.length < 2;
+      oddsEl('oddsBook').innerHTML = books.map(function (bk) {
+        return '<option value="' + esc(bk.key) + '">' + esc(bk.title) + '</option>';
+      }).join('');
+      if (d.book) oddsEl('oddsBook').value = d.book;
       var evs = d.events || [];
       if (!evs.length) { oddsMessage('Nessun evento con quote in questo campionato.'); return; }
       oddsEl('oddsBody').innerHTML = evs.slice(0, 40).map(function (ev) {
@@ -1140,12 +1150,19 @@
           ' <span>' + esc(lbl) + '</span></div><div class="odds-row">' +
           (btns || '<span class="hint">nessuna quota disponibile</span>') + '</div></div>';
       }).join('');
-      oddsEl('oddsFoot').textContent = 'Quote di ' + (d.book || 'book di riferimento') +
+      var scelto = books.filter(function (bk) { return bk.key === d.book; })[0];
+      oddsEl('oddsFoot').textContent = 'Quote di ' + ((scelto && scelto.title) || d.book || 'book di riferimento') +
+        (pref && d.book !== pref ? ' (il tuo book abituale non copre questo campionato)' : '') +
         (d.remaining ? ' · ' + d.remaining + ' richieste rimaste questo mese' : '');
     }).catch(function (e) { oddsMessage(e.message); });
   }
 
   oddsEl('oddsLeague').addEventListener('change', loadOdds);
+
+  oddsEl('oddsBook').addEventListener('change', function () {
+    lsSet('bb-book', this.value);
+    loadOdds();
+  });
 
   oddsEl('oddsBody').addEventListener('click', function (e) {
     var btn = e.target.closest('button[data-price]');
