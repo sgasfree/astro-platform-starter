@@ -237,6 +237,19 @@
   .odds-row { display: flex; flex-wrap: wrap; gap: 6px; }
   .odds-btn { font-family: var(--mono); font-variant-numeric: tabular-nums; }
   .odds-btn strong { color: var(--gold); }
+  .mkt-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .mkt {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 0.75rem; color: var(--muted);
+    border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; cursor: pointer;
+  }
+  .mkt:has(input:checked) { color: var(--gold); border-color: var(--gold); }
+  .mkt input { width: auto; margin: 0; padding: 0; accent-color: var(--gold); }
+  .ev-more { margin-top: 6px; }
+  .mkt-group { margin-top: 8px; }
+  .mkt-title {
+    font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px;
+  }
 
   /* ── Chart ──────────────────────────── */
   .chart svg { display: block; width: 100%; height: auto; }
@@ -375,11 +388,12 @@
     <form method="dialog"><button class="btn btn-sm btn-ghost dlg-x" aria-label="Chiudi">&#10005;</button></form>
     <h2>Quota di chiusura</h2>
     <p class="hint" id="oddsSub"></p>
-    <p class="note" style="margin: 8px 0 12px">Da usare poco prima dell&rsquo;inizio dell&rsquo;evento: la quota che scegli viene salvata come closing odds della giocata.</p>
+    <p class="note" style="margin: 8px 0 12px">Da usare poco prima dell&rsquo;inizio dell&rsquo;evento: la quota che scegli viene salvata come closing odds della giocata. Angoli, ammonizioni, risultato esatto e gol si ottengono con &ldquo;pi&ugrave; mercati&rdquo; sul singolo evento.</p>
     <div class="frm" style="margin-bottom: 12px">
       <label class="fld">Campionato<select id="oddsLeague"></select></label>
       <label class="fld" id="oddsBookWrap" hidden>Bookmaker di riferimento<select id="oddsBook"></select></label>
     </div>
+    <div class="mkt-row" id="oddsMarkets"></div>
     <div id="oddsBody" style="overflow-y: auto; max-height: 44vh"></div>
     <p class="hint" id="oddsFoot" style="margin-top: 10px"></p>
   </dialog>
@@ -1096,6 +1110,54 @@
     oddsEl('oddsBody').innerHTML = '<p class="note">' + esc(msg) + '</p>';
   }
 
+  var MERCATI_DEFAULT = ['esito', 'totali', 'gol', 'esatto', 'angoli', 'ammonizioni', 'squadra'];
+
+  function mercatiScelti() {
+    var salvati = lsGet('bb-mercati');
+    return salvati === null ? MERCATI_DEFAULT.slice() : salvati.split(',').filter(Boolean);
+  }
+
+  function renderMercati() {
+    var box = oddsEl('oddsMarkets');
+    if (box.children.length) return;
+    fetch('/api/odds?markets=1').then(function (r) { return r.json(); }).then(function (d) {
+      var attivi = mercatiScelti();
+      box.innerHTML = (d.markets || []).map(function (m) {
+        return '<label class="mkt"><input type="checkbox" value="' + esc(m.id) + '"' +
+          (attivi.indexOf(m.id) !== -1 ? ' checked' : '') + '>' + esc(m.label) + '</label>';
+      }).join('');
+    }).catch(function () { box.innerHTML = ''; });
+  }
+
+  function loadEventMarkets(evId, btn) {
+    var box = document.getElementById('more-' + evId);
+    if (!box) return;
+    var pref = lsGet('bb-book') || '';
+    box.innerHTML = '<p class="hint">Carico i mercati…</p>';
+    btn.disabled = true;
+    oddsFetch('sport=' + encodeURIComponent(oddsEl('oddsLeague').value) +
+      '&event=' + encodeURIComponent(evId) +
+      '&groups=' + encodeURIComponent(mercatiScelti().join(',')) +
+      (pref ? '&book=' + encodeURIComponent(pref) : '')
+    ).then(function (d) {
+      var html = (d.groups || []).map(function (g) {
+        return '<div class="mkt-group"><div class="mkt-title">' + esc(g.label) + '</div><div class="odds-row">' +
+          g.outcomes.map(function (o) {
+            var name = o.label + (o.point === null || o.point === undefined ? '' : ' ' + o.point);
+            return '<button class="btn btn-sm odds-btn" data-price="' + o.price + '">' +
+              esc(name) + ' <strong>' + Number(o.price).toFixed(2) + '</strong></button>';
+          }).join('') + '</div></div>';
+      }).join('');
+      var note = [];
+      if (d.missing && d.missing.length) note.push('Questo evento non espone: ' + d.missing.join(', ') + '.');
+      if (d.skipped && d.skipped.length) note.push('Mercati che il tuo piano non supporta: ' + d.skipped.join(', ') + '.');
+      box.innerHTML = (html || '<p class="hint">Nessun mercato aggiuntivo disponibile.</p>') +
+        (note.length ? '<p class="hint">' + esc(note.join(' ')) + '</p>' : '');
+    }).catch(function (e) {
+      box.innerHTML = '<p class="hint">' + esc(e.message) + '</p>';
+    }).then(function () { btn.disabled = false; });
+  }
+
   function openOdds(id) {
     var bet = S.bets.find(function (b) { return b.id === id; });
     if (!bet) return;
@@ -1105,6 +1167,7 @@
     oddsEl('oddsLeague').innerHTML = '';
     oddsEl('oddsFoot').textContent = '';
     oddsMessage('Carico i campionati…');
+    renderMercati();
     oddsEl('oddsDlg').showModal();
     oddsFetch('list=1&group=' + encodeURIComponent(bet.sport || '')).then(function (d) {
       var sports = d.sports || [];
@@ -1148,7 +1211,9 @@
         }).join('');
         return '<div class="ev"><div class="ev-head">' + esc(ev.home) + ' – ' + esc(ev.away) +
           ' <span>' + esc(lbl) + '</span></div><div class="odds-row">' +
-          (btns || '<span class="hint">nessuna quota disponibile</span>') + '</div></div>';
+          (btns || '<span class="hint">nessuna quota disponibile</span>') + '</div>' +
+          '<div class="ev-more"><button class="btn btn-sm btn-ghost" data-ev="' + esc(ev.id) + '">più mercati</button>' +
+          '<div id="more-' + esc(ev.id) + '"></div></div></div>';
       }).join('');
       var scelto = books.filter(function (bk) { return bk.key === d.book; })[0];
       oddsEl('oddsFoot').textContent = 'Quote di ' + ((scelto && scelto.title) || d.book || 'book di riferimento') +
@@ -1159,12 +1224,19 @@
 
   oddsEl('oddsLeague').addEventListener('change', loadOdds);
 
+  oddsEl('oddsMarkets').addEventListener('change', function () {
+    var scelti = [].slice.call(this.querySelectorAll('input:checked')).map(function (i) { return i.value; });
+    lsSet('bb-mercati', scelti.join(','));
+  });
+
   oddsEl('oddsBook').addEventListener('change', function () {
     lsSet('bb-book', this.value);
     loadOdds();
   });
 
   oddsEl('oddsBody').addEventListener('click', function (e) {
+    var piu = e.target.closest('button[data-ev]');
+    if (piu) { loadEventMarkets(piu.dataset.ev, piu); return; }
     var btn = e.target.closest('button[data-price]');
     if (!btn) return;
     var bet = S.bets.find(function (b) { return b.id === oddsBetId; });
