@@ -5,7 +5,7 @@ export const prerender = false;
 
 const API = 'https://api.the-odds-api.com/v4';
 const CACHE_ODDS_MS = 2 * 60 * 1000;
-const CACHE_SPORTS_MS = 6 * 60 * 60 * 1000;
+const CACHE_SPORTS_MS = 30 * 60 * 1000;
 const DEFAULT_BOOK = 'pinnacle';
 
 // Sport dell'app → come riconoscere le leghe corrispondenti nel catalogo dell'API.
@@ -16,7 +16,7 @@ const SPORT_MATCH: Record<string, string> = {
     Basket: 'basketball'
 };
 
-type Sport = { key: string; title: string; group: string; active: boolean };
+type Sport = { key: string; title: string; description?: string; group: string; active: boolean };
 
 // Mercati offerti nella finestra delle quote. 1X2, over/under e handicap arrivano con la
 // chiamata al campionato; gli altri sono "mercati aggiuntivi" e l'API li restituisce solo
@@ -111,7 +111,15 @@ export const GET: APIRoute = async ({ url }) => {
                 needle
                     ? all.filter((s) => s.key.toLowerCase().startsWith(needle) || s.group.toLowerCase().includes(needle))
                     : all
-            ).map(({ key, title, group: g }) => ({ key, title, group: g }));
+            )
+                // Il titolo del catalogo è spesso una sigla ("EPL"): la descrizione dice il nome
+                // per esteso ("English Premier League"), che è come la cerca chi la usa.
+                .map(({ key, title, description, group: g }) => ({
+                    key,
+                    title: description && description.length > title.length ? description : title,
+                    group: g
+                }))
+                .sort((a, b) => a.title.localeCompare(b.title, 'it'));
             return json({ sports, remaining });
         }
 
