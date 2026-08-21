@@ -33,6 +33,12 @@ Il bookmaker di riferimento si sceglie anche dal menu dentro la finestra delle q
 
 Ogni campionato richiede una sola chiamata all'API, che scarica tutti i bookmaker della regione (il costo in crediti non dipende dal loro numero): cambiare book di riferimento non consuma crediti aggiuntivi. Le risposte restano in cache per due minuti, l'elenco dei campionati per sei ore.
 
+### Mercati
+
+L'elenco di un campionato riporta i mercati principali (1X2, over/under, handicap). Angoli, ammonizioni, gol, risultato esatto e totali squadra sono mercati aggiuntivi che l'API espone solo per singolo evento: si ottengono con "più mercati" sull'evento, e le caselle in cima alla finestra scelgono quali richiedere (la selezione è ricordata sul dispositivo). Ogni evento aperto è una chiamata a parte, con costo proporzionale al numero di mercati richiesti, quindi conviene tenere selezionati solo quelli che si usano davvero.
+
+La disponibilità dipende dal piano e dal campionato: i mercati che l'API rifiuta vengono scartati e riprovati senza far fallire la richiesta, e la finestra elenca quelli non ottenuti.
+
 ## Deploying to Netlify
 
 [![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/netlify-templates/astro-platform-starter)

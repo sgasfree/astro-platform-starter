@@ -18,6 +18,23 @@ const SPORT_MATCH: Record<string, string> = {
 
 type Sport = { key: string; title: string; group: string; active: boolean };
 
+// Mercati offerti nella finestra delle quote. 1X2, over/under e handicap arrivano con la
+// chiamata al campionato; gli altri sono "mercati aggiuntivi" e l'API li restituisce solo
+// interrogando il singolo evento, con la disponibilità che dipende da piano e campionato.
+// Dove il codice può variare si elencano più alias: quelli rifiutati vengono scartati e
+// segnalati, invece di far fallire l'intera richiesta.
+const MARKETS: { id: string; label: string; keys: string[]; featured?: boolean }[] = [
+    { id: 'esito', label: '1X2', keys: ['h2h'], featured: true },
+    { id: 'totali', label: 'Over/Under', keys: ['totals'], featured: true },
+    { id: 'handicap', label: 'Handicap', keys: ['spreads'], featured: true },
+    { id: 'gol', label: 'Gol / No Gol', keys: ['btts'] },
+    { id: 'esatto', label: 'Risultato esatto', keys: ['exact_score', 'correct_score'] },
+    { id: 'angoli', label: 'Angoli', keys: ['totals_corners', 'alternate_totals_corners'] },
+    { id: 'ammonizioni', label: 'Ammonizioni', keys: ['totals_cards', 'alternate_totals_cards'] },
+    { id: 'squadra', label: 'Totali casa/ospite', keys: ['team_totals'] }
+];
+const MARKET_LABEL = new Map(MARKETS.flatMap((m) => m.keys.map((k) => [k, m.label])));
+
 function apiKey() {
     return import.meta.env.ODDS_API_KEY || process.env.ODDS_API_KEY || '';
 }
@@ -69,6 +86,11 @@ async function upstream(path: string) {
 }
 
 export const GET: APIRoute = async ({ url }) => {
+    // Catalogo dei mercati: non richiede la chiave, così l'app può mostrarli comunque.
+    if (url.searchParams.get('markets')) {
+        return json({ markets: MARKETS.map(({ id, label, featured }) => ({ id, label, featured: !!featured })) });
+    }
+
     if (!apiKey()) {
         return json(
             {
@@ -93,11 +115,79 @@ export const GET: APIRoute = async ({ url }) => {
             return json({ sports, remaining });
         }
 
+        const sport = slug(url.searchParams.get('sport'));
+        if (!sport) return json({ error: 'Campionato non indicato.' }, 400);
+
+        // Mercati aggiuntivi di un singolo evento (angoli, ammonizioni, risultato esatto…):
+        // l'API li espone solo per evento, non nell'elenco del campionato.
+        const eventId = slug(url.searchParams.get('event'));
+        if (eventId) {
+            const wantedGroups = (url.searchParams.get('groups') || '')
+                .split(',')
+                .map((g) => g.trim())
+                .filter((g) => MARKETS.some((m) => m.id === g));
+            const chosenMarkets = wantedGroups.length ? MARKETS.filter((m) => wantedGroups.includes(m.id)) : MARKETS;
+
+            const { payload, skipped, remaining } = await cached(
+                `event:${eventId}:${chosenMarkets.map((m) => m.id).join('.')}`,
+                CACHE_ODDS_MS,
+                async () => {
+                    let keys = chosenMarkets.flatMap((m) => m.keys);
+                    const dropped: string[] = [];
+                    // Un mercato non supportato fa fallire tutta la richiesta: lo si toglie e si riprova,
+                    // così i mercati validi arrivano comunque e l'app può dire quali mancano.
+                    for (;;) {
+                        try {
+                            const res = await upstream(
+                                `/sports/${sport}/events/${eventId}/odds?regions=eu&markets=${keys.join(',')}&oddsFormat=decimal`
+                            );
+                            return { payload: res.data as any, skipped: dropped, remaining: res.remaining };
+                        } catch (e: any) {
+                            const bad = keys.filter((k) => String(e?.message || '').includes(k));
+                            if (!bad.length || bad.length === keys.length) throw e;
+                            dropped.push(...bad);
+                            keys = keys.filter((k) => !bad.includes(k));
+                        }
+                    }
+                }
+            );
+
+            const evTitles = new Map<string, string>();
+            for (const b of payload?.bookmakers ?? []) evTitles.set(b.key, b.title || b.key);
+            const evBooks = [...evTitles]
+                .map(([key, title]) => ({ key, title }))
+                .sort((a, b) => a.title.localeCompare(b.title));
+            const evWanted = slug(url.searchParams.get('book')) || process.env.ODDS_BOOKMAKER || DEFAULT_BOOK;
+            const evBook = evTitles.has(evWanted)
+                ? evWanted
+                : evTitles.has(DEFAULT_BOOK)
+                  ? DEFAULT_BOOK
+                  : (evBooks[0]?.key ?? evWanted);
+
+            const groups = ((payload?.bookmakers ?? []).find((b: any) => b.key === evBook)?.markets ?? []).map(
+                (m: any) => ({
+                    key: m.key,
+                    label: MARKET_LABEL.get(m.key) || m.key,
+                    outcomes: (m.outcomes ?? []).map((o: any) => ({
+                        label: [o.description, o.name].filter(Boolean).join(' '),
+                        point: o.point ?? null,
+                        price: o.price
+                    }))
+                })
+            );
+
+            const skippedLabels = [...new Set(skipped.map((k) => MARKET_LABEL.get(k) || k))];
+            const missing = chosenMarkets
+                .filter((m) => !groups.some((g: any) => m.keys.includes(g.key)))
+                .map((m) => m.label)
+                .filter((l) => !skippedLabels.includes(l));
+
+            return json({ groups, missing, skipped: skippedLabels, book: evBook, books: evBooks, remaining });
+        }
+
         // Quote correnti di una lega. La chiamata scarica tutti i bookmaker della regione
         // (il costo in crediti non dipende dal loro numero) e la risposta viene messa in
         // cache una volta sola: cambiare bookmaker di riferimento non consuma altri crediti.
-        const sport = slug(url.searchParams.get('sport'));
-        if (!sport) return json({ error: 'Campionato non indicato.' }, 400);
 
         const { data, remaining } = await cached(`odds:${sport}`, CACHE_ODDS_MS, () =>
             upstream(`/sports/${sport}/odds?regions=eu&markets=h2h,totals&oddsFormat=decimal`)
